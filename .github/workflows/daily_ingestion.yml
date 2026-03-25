@@ -48,6 +48,10 @@ jobs:
           echo "::add-mask::$MAILCHIMP_API_KEY"
           echo "MAILCHIMP_API_KEY=$MAILCHIMP_API_KEY" >> $GITHUB_ENV
 
+          MAILCHIMP_LIST_ID=$(gcloud secrets versions access latest --secret=MAILCHIMP_LIST_ID)
+          echo "::add-mask::$MAILCHIMP_LIST_ID"
+          echo "MAILCHIMP_LIST_ID=$MAILCHIMP_LIST_ID" >> $GITHUB_ENV
+
           STRIPE_API_KEY=$(gcloud secrets versions access latest --secret=STRIPE_API_KEY)
           echo "::add-mask::$STRIPE_API_KEY"
           echo "STRIPE_API_KEY=$STRIPE_API_KEY" >> $GITHUB_ENV
@@ -84,6 +88,14 @@ jobs:
           echo "::add-mask::$SPOTIFY_CLIENT_SECRET"
           echo "SPOTIFY_CLIENT_SECRET=$SPOTIFY_CLIENT_SECRET" >> $GITHUB_ENV
 
+          SPOTIFY_SHOW_ID_MIC=$(gcloud secrets versions access latest --secret=SPOTIFY_SHOW_ID_MIC)
+          echo "::add-mask::$SPOTIFY_SHOW_ID_MIC"
+          echo "SPOTIFY_SHOW_ID_MIC=$SPOTIFY_SHOW_ID_MIC" >> $GITHUB_ENV
+
+          SPOTIFY_SHOW_ID_INNER_WORK=$(gcloud secrets versions access latest --secret=SPOTIFY_SHOW_ID_INNER_WORK)
+          echo "::add-mask::$SPOTIFY_SHOW_ID_INNER_WORK"
+          echo "SPOTIFY_SHOW_ID_INNER_WORK=$SPOTIFY_SHOW_ID_INNER_WORK" >> $GITHUB_ENV
+
       - name: Run YouTube ingestion
         continue-on-error: true
         env:
@@ -98,6 +110,7 @@ jobs:
         continue-on-error: true
         env:
           MAILCHIMP_API_KEY: ${{ env.MAILCHIMP_API_KEY }}
+          MAILCHIMP_LIST_ID: ${{ env.MAILCHIMP_LIST_ID }}
         run: python ingestion/mailchimp.py
 
       - name: Run Stripe ingestion
