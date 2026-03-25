@@ -131,4 +131,6 @@ jobs:
         env:
           SPOTIFY_CLIENT_ID: ${{ env.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ env.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_SHOW_ID_MIC: ${{ env.SPOTIFY_SHOW_ID_MIC }}
+          SPOTIFY_SHOW_ID_INNER_WORK: ${{ env.SPOTIFY_SHOW_ID_INNER_WORK }}
         run: python ingestion/spotify.py
