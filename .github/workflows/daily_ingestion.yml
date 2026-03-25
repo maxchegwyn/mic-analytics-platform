@@ -40,17 +40,49 @@ jobs:
 
       - name: Fetch secrets from GCP Secret Manager
         run: |
-          echo "YOUTUBE_TOKEN=$(gcloud secrets versions access latest --secret=YOUTUBE_TOKEN)" >> $GITHUB_ENV
-          echo "MAILCHIMP_API_KEY=$(gcloud secrets versions access latest --secret=MAILCHIMP_API_KEY)" >> $GITHUB_ENV
-          echo "STRIPE_API_KEY=$(gcloud secrets versions access latest --secret=STRIPE_API_KEY)" >> $GITHUB_ENV
-          echo "WOOCOMMERCE_URL=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_URL)" >> $GITHUB_ENV
-          echo "WOOCOMMERCE_CONSUMER_KEY=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_CONSUMER_KEY)" >> $GITHUB_ENV
-          echo "WOOCOMMERCE_CONSUMER_SECRET=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_CONSUMER_SECRET)" >> $GITHUB_ENV
-          echo "JOTFORM_API_KEY=$(gcloud secrets versions access latest --secret=JOTFORM_API_KEY)" >> $GITHUB_ENV
-          echo "JOTFORM_FORM_ID_STANDARD=$(gcloud secrets versions access latest --secret=JOTFORM_FORM_ID_STANDARD)" >> $GITHUB_ENV
-          echo "JOTFORM_FORM_ID_MANUAL_OPT=$(gcloud secrets versions access latest --secret=JOTFORM_FORM_ID_MANUAL_OPT)" >> $GITHUB_ENV
-          echo "SPOTIFY_CLIENT_ID=$(gcloud secrets versions access latest --secret=SPOTIFY_CLIENT_ID)" >> $GITHUB_ENV
-          echo "SPOTIFY_CLIENT_SECRET=$(gcloud secrets versions access latest --secret=SPOTIFY_CLIENT_SECRET)" >> $GITHUB_ENV
+          YOUTUBE_TOKEN=$(gcloud secrets versions access latest --secret=YOUTUBE_TOKEN)
+          echo "::add-mask::$YOUTUBE_TOKEN"
+          echo "YOUTUBE_TOKEN=$YOUTUBE_TOKEN" >> $GITHUB_ENV
+
+          MAILCHIMP_API_KEY=$(gcloud secrets versions access latest --secret=MAILCHIMP_API_KEY)
+          echo "::add-mask::$MAILCHIMP_API_KEY"
+          echo "MAILCHIMP_API_KEY=$MAILCHIMP_API_KEY" >> $GITHUB_ENV
+
+          STRIPE_API_KEY=$(gcloud secrets versions access latest --secret=STRIPE_API_KEY)
+          echo "::add-mask::$STRIPE_API_KEY"
+          echo "STRIPE_API_KEY=$STRIPE_API_KEY" >> $GITHUB_ENV
+
+          WOOCOMMERCE_URL=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_URL)
+          echo "::add-mask::$WOOCOMMERCE_URL"
+          echo "WOOCOMMERCE_URL=$WOOCOMMERCE_URL" >> $GITHUB_ENV
+
+          WOOCOMMERCE_CONSUMER_KEY=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_CONSUMER_KEY)
+          echo "::add-mask::$WOOCOMMERCE_CONSUMER_KEY"
+          echo "WOOCOMMERCE_CONSUMER_KEY=$WOOCOMMERCE_CONSUMER_KEY" >> $GITHUB_ENV
+
+          WOOCOMMERCE_CONSUMER_SECRET=$(gcloud secrets versions access latest --secret=WOOCOMMERCE_CONSUMER_SECRET)
+          echo "::add-mask::$WOOCOMMERCE_CONSUMER_SECRET"
+          echo "WOOCOMMERCE_CONSUMER_SECRET=$WOOCOMMERCE_CONSUMER_SECRET" >> $GITHUB_ENV
+
+          JOTFORM_API_KEY=$(gcloud secrets versions access latest --secret=JOTFORM_API_KEY)
+          echo "::add-mask::$JOTFORM_API_KEY"
+          echo "JOTFORM_API_KEY=$JOTFORM_API_KEY" >> $GITHUB_ENV
+
+          JOTFORM_FORM_ID_STANDARD=$(gcloud secrets versions access latest --secret=JOTFORM_FORM_ID_STANDARD)
+          echo "::add-mask::$JOTFORM_FORM_ID_STANDARD"
+          echo "JOTFORM_FORM_ID_STANDARD=$JOTFORM_FORM_ID_STANDARD" >> $GITHUB_ENV
+
+          JOTFORM_FORM_ID_MANUAL_OPT=$(gcloud secrets versions access latest --secret=JOTFORM_FORM_ID_MANUAL_OPT)
+          echo "::add-mask::$JOTFORM_FORM_ID_MANUAL_OPT"
+          echo "JOTFORM_FORM_ID_MANUAL_OPT=$JOTFORM_FORM_ID_MANUAL_OPT" >> $GITHUB_ENV
+
+          SPOTIFY_CLIENT_ID=$(gcloud secrets versions access latest --secret=SPOTIFY_CLIENT_ID)
+          echo "::add-mask::$SPOTIFY_CLIENT_ID"
+          echo "SPOTIFY_CLIENT_ID=$SPOTIFY_CLIENT_ID" >> $GITHUB_ENV
+
+          SPOTIFY_CLIENT_SECRET=$(gcloud secrets versions access latest --secret=SPOTIFY_CLIENT_SECRET)
+          echo "::add-mask::$SPOTIFY_CLIENT_SECRET"
+          echo "SPOTIFY_CLIENT_SECRET=$SPOTIFY_CLIENT_SECRET" >> $GITHUB_ENV
 
       - name: Run YouTube ingestion
         continue-on-error: true
