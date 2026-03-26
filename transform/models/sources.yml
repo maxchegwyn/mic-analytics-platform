@@ -1,0 +1,82 @@
+version: 2
+
+sources:
+  - name: raw_youtube
+    database: make-it-conscious
+    schema: raw_youtube
+    description: "Daily video metrics from YouTube Analytics API via dlt. One row per video per day. Watch time stored as estimated_minutes_watched — converted to hours in staging."
+    tables:
+      - name: raw_video_daily_metrics
+        columns:
+          - name: video_id
+            tests: [not_null]
+
+  - name: raw_mailchimp
+    database: make-it-conscious
+    schema: raw_mailchimp
+    description: "Subscriber list, campaign send data, and per-subscriber email activity. Primary source for audience size, engagement rates, and personality type custom fields."
+    tables:
+      - name: members
+        columns:
+          - name: email_address
+            tests: [not_null, unique]
+      - name: campaigns
+        columns:
+          - name: id
+            tests: [not_null, unique]
+      - name: email_activity__activity
+      - name: email_activity
+
+  - name: raw_stripe
+    database: make-it-conscious
+    schema: raw_stripe
+    description: "Transaction-level revenue from WooCommerce and LearnWorlds. Both platforms share the same Stripe account."
+    tables:
+      - name: charges
+      - name: customers
+      - name: invoices
+      - name: subscriptions
+      - name: payment_intents
+
+  - name: raw_woocommerce
+    database: make-it-conscious
+    schema: raw_woocommerce
+    description: "WooCommerce order and product data via REST API. Customer email in billing__email field."
+    tables:
+      - name: orders
+        columns:
+          - name: billing__email
+            tests: [not_null]
+      - name: orders__line_items
+      - name: products
+
+  - name: raw_jotform
+    database: make-it-conscious
+    schema: raw_jotform
+    description: "PDA submissions. Primary source of personality type for cross-source joins."
+    tables:
+      - name: submissions_standard
+        columns:
+          - name: submission_id
+            tests: [not_null, unique]
+      - name: submissions_manual_opt
+
+  - name: raw_wordpress
+    database: make-it-conscious
+    schema: raw_wordpress
+    description: "Blog post metadata via WordPress REST API. Maps GA4 URL paths to readable post titles."
+    tables:
+      - name: posts
+      - name: pages
+      - name: categories
+      - name: tags
+      - name: posts__categories
+      - name: posts__tags
+
+  - name: raw_spotify
+    database: make-it-conscious
+    schema: raw_spotify
+    description: "Episode metadata for MiC and Inner Work podcasts."
+    tables:
+      - name: episodes_mic
+      - name: episodes_inner_work
