@@ -102,6 +102,7 @@ jobs:
           TOKEN_FILE: /tmp/mic_token.json
           BQ_PROJECT: make-it-conscious
           BQ_DATASET: raw_youtube
+          OAUTH_CLIENT_FILE: /tmp/dummy
         run: |
           echo "$YOUTUBE_TOKEN" > /tmp/mic_token.json
           python ingestion/youtube.py
