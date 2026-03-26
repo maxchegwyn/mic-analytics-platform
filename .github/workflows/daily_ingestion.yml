@@ -145,3 +145,24 @@ jobs:
           SPOTIFY_SHOW_ID_MIC: ${{ env.SPOTIFY_SHOW_ID_MIC }}
           SPOTIFY_SHOW_ID_INNER_WORK: ${{ env.SPOTIFY_SHOW_ID_INNER_WORK }}
         run: python ingestion/spotify.py
+
+      - name: Install dbt
+        run: pip install dbt-bigquery
+
+      - name: Run dbt transformations
+        run: |
+          mkdir -p /tmp/dbt_profiles
+          cat > /tmp/dbt_profiles/profiles.yml << 'EOF'
+          mic_analytics:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: oauth
+                project: make-it-conscious
+                dataset: dbt_prod
+                threads: 4
+                timeout_seconds: 300
+                location: US
+          EOF
+          DBT_PROFILES_DIR=/tmp/dbt_profiles dbt run --project-dir transform
