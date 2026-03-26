@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import dlt
 from datetime import datetime, timedelta, timezone
 from google.oauth2.credentials import Credentials
@@ -27,7 +28,9 @@ SCOPES = [
 def get_authenticated_service():
     creds = None
     if os.path.exists(TOKEN_FILE):
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+        with open(TOKEN_FILE, 'r') as f:
+            token_data = json.loads(f.read().strip())
+        creds = Credentials.from_authorized_user_info(token_data, SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
@@ -40,7 +43,9 @@ def get_authenticated_service():
 
 
 def get_channel_videos():
-    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    with open(TOKEN_FILE, 'r') as f:
+        token_data = json.loads(f.read().strip())
+    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
     youtube = build("youtube", "v3", credentials=creds)
     videos = []
     request = youtube.channels().list(part="contentDetails", mine=True)
