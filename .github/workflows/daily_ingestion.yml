@@ -40,10 +40,6 @@ jobs:
 
       - name: Fetch secrets from GCP Secret Manager
         run: |
-          YOUTUBE_TOKEN=$(gcloud secrets versions access latest --secret=YOUTUBE_TOKEN)
-          echo "::add-mask::$YOUTUBE_TOKEN"
-          echo "YOUTUBE_TOKEN=$YOUTUBE_TOKEN" >> $GITHUB_ENV
-
           MAILCHIMP_API_KEY=$(gcloud secrets versions access latest --secret=MAILCHIMP_API_KEY)
           echo "::add-mask::$MAILCHIMP_API_KEY"
           echo "MAILCHIMP_API_KEY=$MAILCHIMP_API_KEY" >> $GITHUB_ENV
@@ -104,7 +100,8 @@ jobs:
           BQ_DATASET: raw_youtube
           OAUTH_CLIENT_FILE: /tmp/dummy
         run: |
-          echo "$YOUTUBE_TOKEN" > /tmp/mic_token.json
+          touch /tmp/dummy
+          gcloud secrets versions access latest --secret=YOUTUBE_TOKEN > /tmp/mic_token.json
           python ingestion/youtube.py
 
       - name: Run Mailchimp ingestion
