@@ -10,6 +10,8 @@ sources:
         columns:
           - name: video_id
             tests: [not_null]
+      - name: raw_video_metadata
+      - name: raw_video_playlists
 
   - name: raw_mailchimp
     database: make-it-conscious
