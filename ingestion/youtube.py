@@ -18,6 +18,23 @@ BQ_DATASET = os.environ.get("BQ_DATASET")
 YOUTUBE_START_DATE = os.environ.get("YOUTUBE_START_DATE", "2013-01-01")
 YOUTUBE_MODE = os.environ.get("YOUTUBE_MODE", "incremental")
 
+EXERCISE_PLAYLIST_IDS = {
+    "PLeuFwuWK5O2MMxqoPMkk9eEbVIrbwq-7B": "Active Imagination Exercises",
+    "PLeuFwuWK5O2PWOC6QlGwXS2aWnaPTTF-8": "Core Practice",
+    "PLeuFwuWK5O2M4fntROuoX5ee6QtGeq9Ff": "Symbolic Investigation",
+    "PLeuFwuWK5O2PgSRjN-7rs30f9gDFrpfpn": "Personality Alchemy",
+    "PLeuFwuWK5O2Nejd2AcnxFZF2Tf_pUAr9M": "Anima Animus",
+    "PLeuFwuWK5O2Ob_hGnYVbpuu6AkaYPaPhd": "Archetypal Encounters",
+    "PLeuFwuWK5O2O4ATRp4jCkWLTiaaFmZiqw": "Shadow Work",
+    "PLeuFwuWK5O2Pt3ovWFgI8XknvbAn1Eqco": "Emotional Integration",
+    "PLeuFwuWK5O2NmxQBrDJV0V21v_YHA7gyI": "Ten Day Meditation Series",
+    "PLeuFwuWK5O2OvmSpHOqOPlcOQJUnHcZZa": "Beyond the Limen",
+    "PLeuFwuWK5O2Nyf14v0Q6yDGnOslYoXcSo": "Zodiac Series",
+    "PLeuFwuWK5O2MtO5925N7A2vqKQQT1J8Mc": "Dream Investigation",
+    "PLeuFwuWK5O2N9BObUU3fg7q3GtcKNG0tS": "Applied Series",
+    "PLeuFwuWK5O2OZ9bFhdbjBzMJBo1pAl61Q": "Tarot Series",
+}
+
 SCOPES = [
     "https://www.googleapis.com/auth/yt-analytics.readonly",
     "https://www.googleapis.com/auth/yt-analytics-monetary.readonly",
@@ -67,6 +84,60 @@ def get_channel_videos():
             break
     return videos
 
+def fetch_video_metadata(video_ids):
+    with open(TOKEN_FILE, 'r') as f:
+        token_data = json.loads(f.read().strip())
+    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+    youtube = build("youtube", "v3", credentials=creds)
+    metadata = []
+    for i in range(0, len(video_ids), 50):
+        batch = video_ids[i:i+50]
+        request = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=",".join(batch)
+        )
+        response = request.execute()
+        for item in response.get("items", []):
+            metadata.append({
+                "video_id": item["id"],
+                "title": item["snippet"]["title"],
+                "publish_date": item["snippet"]["publishedAt"][:10],
+                "channel_title": item["snippet"]["channelTitle"],
+                "description": item["snippet"]["description"][:500] if item["snippet"].get("description") else None,
+                "duration_iso": item["contentDetails"]["duration"],
+                "tags": ",".join(item["snippet"].get("tags", [])),
+            })
+    return metadata
+
+def fetch_playlist_memberships():
+    with open(TOKEN_FILE, 'r') as f:
+        token_data = json.loads(f.read().strip())
+    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+    youtube = build("youtube", "v3", credentials=creds)
+
+    memberships = []
+    for playlist_id, playlist_title in EXERCISE_PLAYLIST_IDS.items():
+        print(f"Fetching playlist: {playlist_title}")
+        next_page_token = None
+        while True:
+            pl_request = youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=playlist_id,
+                maxResults=50,
+                pageToken=next_page_token,
+            )
+            pl_response = pl_request.execute()
+            for item in pl_response.get("items", []):
+                memberships.append({
+                    "video_id": item["contentDetails"]["videoId"],
+                    "playlist_id": playlist_id,
+                    "playlist_title": playlist_title,
+                })
+            next_page_token = pl_response.get("nextPageToken")
+            if not next_page_token:
+                break
+
+    return memberships
 
 def fetch_daily_metrics(service, video_id, start_date, end_date, retries=3):
     for attempt in range(retries):
@@ -117,6 +188,24 @@ def youtube_daily_metrics(start_date: str, end_date: str):
         rows = fetch_daily_metrics(service, video_id, start_date, end_date)
         yield from rows
 
+@dlt.resource(
+    name="raw_video_metadata",
+    write_disposition="replace",
+    primary_key="video_id",
+)
+def youtube_video_metadata():
+    video_ids = get_channel_videos()
+    print(f"Fetching metadata for {len(video_ids)} videos")
+    yield from fetch_video_metadata(video_ids)
+
+@dlt.resource(
+    name="raw_video_playlists",
+    write_disposition="replace",
+    primary_key=["video_id", "playlist_id"],
+)
+def youtube_playlist_memberships():
+    print("Fetching playlist memberships")
+    yield from fetch_playlist_memberships()
 
 def main():
     required = [CLIENT_SECRETS_FILE, TOKEN_FILE, BQ_PROJECT, BQ_DATASET]
@@ -142,7 +231,11 @@ def main():
     )
 
     load_info = pipeline.run(
-        youtube_daily_metrics(start_date=start_date, end_date=end_date)
+        [
+            youtube_daily_metrics(start_date=start_date, end_date=end_date),
+            youtube_video_metadata(),
+            youtube_playlist_memberships(),
+        ]
     )
     print(load_info)
 
