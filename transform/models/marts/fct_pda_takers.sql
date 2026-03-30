@@ -36,6 +36,11 @@ select
     s.clarity_t,
     s.clarity_j,
     s.submission_source,
-    case when r.submission_count > 1 then true else false end as is_repeat_taker
+    case when r.submission_count > 1 then true else false end as is_repeat_taker,
+    case 
+        when row_number() over (partition by s.email order by s.submitted_at) = 1
+        then true 
+        else false 
+    end as is_first_submission
 from submissions as s
 left join repeat_takers as r on s.email = r.email
