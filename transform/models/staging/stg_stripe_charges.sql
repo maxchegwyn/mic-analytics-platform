@@ -23,7 +23,10 @@ cleaned as (
         payment_method_details__type                    as payment_method_type,
         payment_method_details__card__brand             as card_brand,
         payment_method_details__card__country           as card_country,
-        payment_method_details__card__last4             as card_last4
+        payment_method_details__card__last4             as card_last4,
+        metadata__order_id                              as wc_order_id,
+        metadata__vendor                                as vendor,
+        invoice
     from charges
     where paid = true
         and refunded = false

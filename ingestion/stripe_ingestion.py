@@ -36,6 +36,7 @@ load_dotenv()
 
 STRIPE_BASE_URL = "https://api.stripe.com/v1"
 PAGE_SIZE = 100  # Stripe max per page
+STRIPE_START_DATE = 1640995200  # 2022-01-01 00:00:00 UTC as Unix timestamp
 
 
 def stripe_paginate(
@@ -87,11 +88,15 @@ def charges(api_key: str) -> Iterator[Any]:
     """
     All charges regardless of status (succeeded, failed, refunded).
     Expand customer field to get email without a separate lookup.
+    Fetches full history from 2022-01-01 onward.
     """
     yield from stripe_paginate(
         api_key,
         "charges",
-        params={"expand[]": "data.customer"},
+        params={
+            "expand[]": "data.customer",
+            "created[gte]": STRIPE_START_DATE,
+        },
     )
 
 
