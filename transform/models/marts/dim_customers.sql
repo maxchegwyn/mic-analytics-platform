@@ -7,6 +7,7 @@ members as (
         pda_url,
         status                          as mailchimp_status,
         subscribed_at,
+        opted_in_at,
         avg_open_rate,
         avg_click_rate
     from {{ ref('stg_mailchimp_members') }}
@@ -58,6 +59,7 @@ select
     m.pda_url,
     m.mailchimp_status,
     m.subscribed_at,
+    m.opted_in_at,
     m.avg_open_rate,
     m.avg_click_rate,
     j_agg.first_submission_date,
