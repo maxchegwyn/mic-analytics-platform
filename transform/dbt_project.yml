@@ -18,3 +18,5 @@ models:
   transform:
     staging:
       +materialized: view
+    marts:
+      +materialized: table
