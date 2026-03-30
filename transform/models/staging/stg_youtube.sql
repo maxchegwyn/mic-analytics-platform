@@ -16,6 +16,11 @@ cleaned as (
         coalesce(average_view_duration, 0)                    as average_view_duration_seconds,
         coalesce(average_view_percentage, 0)                  as average_view_percentage
     from source
+    qualify row_number() over (
+        partition by video_id, cast(date as date)
+        order by _dlt_load_id desc
+    ) = 1
 )
+
 
 select * from cleaned
