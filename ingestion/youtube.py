@@ -84,6 +84,7 @@ def get_channel_videos():
             break
     return videos
 
+
 def fetch_video_metadata(video_ids):
     with open(TOKEN_FILE, 'r') as f:
         token_data = json.loads(f.read().strip())
@@ -108,6 +109,7 @@ def fetch_video_metadata(video_ids):
                 "tags": ",".join(item["snippet"].get("tags", [])),
             })
     return metadata
+
 
 def fetch_playlist_memberships():
     with open(TOKEN_FILE, 'r') as f:
@@ -138,6 +140,7 @@ def fetch_playlist_memberships():
                 break
 
     return memberships
+
 
 def fetch_daily_metrics(service, video_id, start_date, end_date, retries=3):
     for attempt in range(retries):
@@ -174,6 +177,41 @@ def fetch_daily_metrics(service, video_id, start_date, end_date, retries=3):
     return []
 
 
+def fetch_channel_daily_metrics(service, start_date, end_date, retries=3):
+    for attempt in range(retries):
+        try:
+            response = service.reports().query(
+                ids="channel==MINE",
+                startDate=start_date,
+                endDate=end_date,
+                metrics="views,estimatedMinutesWatched,subscribersGained,subscribersLost,estimatedRevenue,averageViewDuration,averageViewPercentage,likes,comments,shares",
+                dimensions="day",
+            ).execute()
+            rows = []
+            for row in response.get("rows", []):
+                rows.append({
+                    "date": row[0],
+                    "views": int(row[1]),
+                    "estimated_minutes_watched": int(row[2]),
+                    "subscribers_gained": int(row[3]),
+                    "subscribers_lost": int(row[4]),
+                    "subscribers_net": int(row[3]) - int(row[4]),
+                    "estimated_revenue": float(row[5]),
+                    "average_view_duration": float(row[6]),
+                    "average_view_percentage": float(row[7]),
+                    "likes": int(row[8]),
+                    "comments": int(row[9]),
+                    "shares": int(row[10]),
+                })
+            return rows
+        except Exception:
+            print(f"Attempt {attempt+1} failed for channel metrics")
+            if attempt < retries - 1:
+                time.sleep(5)
+    print(f"Skipping channel metrics after {retries} attempts")
+    return []
+
+
 @dlt.resource(
     name="raw_video_daily_metrics",
     write_disposition="append",
@@ -188,6 +226,19 @@ def youtube_daily_metrics(start_date: str, end_date: str):
         rows = fetch_daily_metrics(service, video_id, start_date, end_date)
         yield from rows
 
+
+@dlt.resource(
+    name="raw_channel_daily_metrics",
+    write_disposition="replace",
+    primary_key=["date"],
+)
+def youtube_channel_daily_metrics(start_date: str, end_date: str):
+    service = get_authenticated_service()
+    print("Fetching channel-level daily metrics")
+    rows = fetch_channel_daily_metrics(service, start_date, end_date)
+    yield from rows
+
+
 @dlt.resource(
     name="raw_video_metadata",
     write_disposition="replace",
@@ -198,6 +249,7 @@ def youtube_video_metadata():
     print(f"Fetching metadata for {len(video_ids)} videos")
     yield from fetch_video_metadata(video_ids)
 
+
 @dlt.resource(
     name="raw_video_playlists",
     write_disposition="replace",
@@ -206,6 +258,7 @@ def youtube_video_metadata():
 def youtube_playlist_memberships():
     print("Fetching playlist memberships")
     yield from fetch_playlist_memberships()
+
 
 def main():
     required = [CLIENT_SECRETS_FILE, TOKEN_FILE, BQ_PROJECT, BQ_DATASET]
@@ -233,6 +286,7 @@ def main():
     load_info = pipeline.run(
         [
             youtube_daily_metrics(start_date=start_date, end_date=end_date),
+            youtube_channel_daily_metrics(start_date=start_date, end_date=end_date),
             youtube_video_metadata(),
             youtube_playlist_memberships(),
         ]

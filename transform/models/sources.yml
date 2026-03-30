@@ -12,6 +12,7 @@ sources:
             tests: [not_null]
       - name: raw_video_metadata
       - name: raw_video_playlists
+      - name: raw_channel_daily_metrics
 
   - name: raw_mailchimp
     database: make-it-conscious
