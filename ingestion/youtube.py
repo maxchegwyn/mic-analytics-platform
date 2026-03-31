@@ -169,8 +169,8 @@ def fetch_daily_metrics(service, video_id, start_date, end_date, retries=3):
                     "shares": int(row[10]),
                 })
             return rows
-        except Exception:
-            print(f"Attempt {attempt+1} failed for {video_id}")
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed for {video_id}: {e}")
             if attempt < retries - 1:
                 time.sleep(5)
     print(f"Skipping {video_id} after {retries} attempts")
@@ -204,8 +204,8 @@ def fetch_channel_daily_metrics(service, start_date, end_date, retries=3):
                     "shares": int(row[10]),
                 })
             return rows
-        except Exception:
-            print(f"Attempt {attempt+1} failed for channel metrics")
+        except Exception as e:
+            print(f"Attempt {attempt+1} failed for channel metrics: {e}")
             if attempt < retries - 1:
                 time.sleep(5)
     print(f"Skipping channel metrics after {retries} attempts")
@@ -286,7 +286,7 @@ def main():
     load_info = pipeline.run(
         [
             youtube_daily_metrics(start_date=start_date, end_date=end_date),
-            youtube_channel_daily_metrics(start_date=start_date, end_date=end_date),
+            youtube_channel_daily_metrics(start_date=YOUTUBE_START_DATE, end_date=end_date),
             youtube_video_metadata(),
             youtube_playlist_memberships(),
         ]
