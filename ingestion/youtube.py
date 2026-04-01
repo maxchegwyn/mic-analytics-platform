@@ -214,17 +214,31 @@ def fetch_channel_daily_metrics(service, start_date, end_date, retries=3):
 
 @dlt.resource(
     name="raw_video_daily_metrics",
-    write_disposition="append",
+    write_disposition="merge",
     primary_key=["date", "video_id"],
 )
 def youtube_daily_metrics(start_date: str, end_date: str):
     service = get_authenticated_service()
     video_ids = get_channel_videos()
     print(f"Found {len(video_ids)} videos")
+    
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    
     for i, video_id in enumerate(video_ids):
         print(f"Fetching {i+1}/{len(video_ids)}: {video_id}")
-        rows = fetch_daily_metrics(service, video_id, start_date, end_date)
-        yield from rows
+        
+        chunk_start = start_dt
+        while chunk_start < end_dt:
+            chunk_end = min(chunk_start + timedelta(days=365), end_dt)
+            rows = fetch_daily_metrics(
+                service,
+                video_id,
+                chunk_start.strftime("%Y-%m-%d"),
+                chunk_end.strftime("%Y-%m-%d")
+            )
+            yield from rows
+            chunk_start = chunk_end + timedelta(days=1)
 
 
 @dlt.resource(
