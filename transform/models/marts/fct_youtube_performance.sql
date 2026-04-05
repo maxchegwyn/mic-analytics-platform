@@ -101,11 +101,9 @@ select
     a.quarter_start_date,
     a.quarter_end_date,
     case
-        when date_diff(
-            a.quarter_end_date,
-            a.quarter_start_date,
-            day
-        ) >= 85                                 then true
-        else                                    false
+        when date_add(v.publish_date, interval (a.quarter_number * 3) month) <= current_date()
+            then true
+        else false
     end                                         as is_complete_quarter
 from aggregated as a
+inner join videos as v using (video_id)
