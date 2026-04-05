@@ -28,3 +28,17 @@ select
 from {{ ref('stg_youtube') }}
 where estimated_revenue > 0
 group by date
+
+union all
+
+select
+    cast(order_id as string)                            as transaction_id,
+    email,
+    order_total                                         as amount,
+    currency,
+    created_at,
+    payment_method                                      as payment_method_type,
+    'woocommerce'                                       as platform
+
+from {{ ref('stg_woocommerce_orders') }}
+where payment_method in ('ppcp-gateway', 'woocommerce_payments')
