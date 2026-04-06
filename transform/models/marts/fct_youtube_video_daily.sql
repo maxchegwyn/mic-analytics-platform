@@ -1,6 +1,7 @@
 select
     s.date,
     s.video_id,
+    v.title,
     v.content_type,
     v.exercise_category,
     s.watch_hours,
