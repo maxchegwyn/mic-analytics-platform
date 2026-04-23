@@ -86,6 +86,7 @@ def build_mailchimp_source(api_key: str, list_id: str) -> dlt.sources.DltSource:
                             "fields": (
                                 "members.id,"
                                 "members.email_address,"
+                                "members.source,"
                                 "members.status,"
                                 "members.timestamp_opt,"
                                 "members.timestamp_signup,"

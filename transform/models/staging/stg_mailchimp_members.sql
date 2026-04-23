@@ -7,6 +7,7 @@ cleaned as (
         id                                          as member_id,
         lower(trim(email_address))                  as email,
         status,
+        source                                      as signup_source,
         timestamp_signup                            as subscribed_at,
         timestamp_opt                               as opted_in_at,
         last_changed                                as last_changed_at,
