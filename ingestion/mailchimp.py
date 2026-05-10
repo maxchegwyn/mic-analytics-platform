@@ -131,9 +131,10 @@
 
 
     @dlt.resource(
-        name="email_activity",
-        write_disposition="replace",
-        primary_key=["campaign_id", "email_id"],
+    name="email_activity",
+    write_disposition="replace",
+    primary_key=["campaign_id", "email_id"],
+    columns={"email_id": {"nullable": True}}
     )
     def email_activity_resource(api_key: str):
         """
@@ -197,10 +198,11 @@
                 emails = data.get("emails", [])
 
                 for record in emails:
-                if not record.get("email_id"):
-                    print(f"WARNING: record missing email_id in campaign {campaign_id}: {record}")
-                    continue
-                yield record
+                    email_id = record.get("email_id")
+                    if not email_id or email_id is None:
+                        print(f"WARNING: skipping record with missing/null email_id in campaign {campaign_id}: {record}")
+                        continue
+                    yield record
 
                 total = data.get("total_items", 0)
                 offset += page_size
