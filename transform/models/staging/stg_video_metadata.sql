@@ -13,3 +13,4 @@ cleaned as (
 )
 
 select * from cleaned
+qualify row_number() over (partition by video_id order by publish_date) = 1
