@@ -1,18 +1,21 @@
 select
-    charge_id                                           as transaction_id,
-    lower(email)                                        as email,
-    amount,
-    currency,
-    created_at,
-    payment_method_type,
+    s.charge_id                                             as transaction_id,
+    lower(s.email)                                          as email,
+    s.amount,
+    s.currency,
+    s.created_at,
+    s.payment_method_type,
+    w.product_name,
     case
-        when wc_order_id is not null        then 'woocommerce'
-        when lower(vendor) = 'learnworlds'  then 'learnworlds'
-        when invoice is not null            then 'learnworlds'
-        else                                     'unknown'
+        when s.wc_order_id is not null        then 'woocommerce'
+        when lower(s.vendor) = 'learnworlds'  then 'learnworlds'
+        when s.invoice is not null            then 'learnworlds'
+        else                                       'unknown'
     end                                             as platform
 
-from {{ ref('stg_stripe_charges') }}
+from {{ ref('stg_stripe_charges') }} s
+left join {{ ref('stg_woocommerce_orders') }} w
+    on s.wc_order_id = cast(w.order_id as string)
 
 union all
 
@@ -23,6 +26,7 @@ select
     'usd'                                               as currency,
     cast(date as timestamp)                             as created_at,
     null                                                as payment_method_type,
+    null                                                as product_name,
     'youtube'                                           as platform
 
 from {{ ref('stg_youtube') }}
@@ -38,6 +42,7 @@ select
     currency,
     created_at,
     payment_method                                      as payment_method_type,
+    product_name,
     'woocommerce'                                       as platform
 
 from {{ ref('stg_woocommerce_orders') }}

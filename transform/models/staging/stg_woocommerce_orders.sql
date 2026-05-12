@@ -23,6 +23,7 @@ orders_cleaned as (
         orders.payment_method_title                         as payment_method_title,
         orders.date_created                                 as created_at,
         orders.date_paid                                    as paid_at,
+        orders.transaction_id                               as stripe_charge_id,
         orders._dlt_id
     from orders
     where orders.status in ('completed', 'processing')
@@ -39,6 +40,7 @@ joined as (
         o.payment_method_title,
         o.created_at,
         o.paid_at,
+        o.stripe_charge_id,
         li.product_name,
         li.product_id,
         li.quantity,

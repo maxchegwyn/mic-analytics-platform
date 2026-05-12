@@ -24,6 +24,18 @@ repeat_takers as (
     group by email
 ),
 
+first_purchase as (
+    select
+        email,
+        min(created_at) as first_purchase_at
+    from {{ ref('fct_revenue') }}
+    where platform = 'woocommerce'
+        and lower(product_name) like '%personality dynamics assessment%'
+        and lower(email) not like '%maxchegwyn%'
+        and lower(email) not like '%makeitconscious%'
+    group by email
+),
+
 with_flags as (
     select
         s.submission_id,
@@ -38,16 +50,28 @@ with_flags as (
         s.clarity_j,
         s.submission_source,
         case when r.submission_count > 1 then true else false end as is_repeat_taker,
-        case 
+        case
             when row_number() over (partition by s.email order by s.submitted_at) = 1
             then true else false
         end as is_first_submission,
-        case 
+        case
             when row_number() over (partition by s.email order by s.submitted_at desc) = 1
             then true else false
-        end as is_latest_submission
+        end as is_latest_submission,
+        fp.first_purchase_at,
+        timestamp_diff(fp.first_purchase_at, s.submitted_at, hour) as hours_to_first_purchase,
+        case
+            when fp.first_purchase_at is null
+                then 'not_converted'
+            when timestamp_diff(fp.first_purchase_at, s.submitted_at, hour) <= 12
+                then 'immediate'
+            when timestamp_diff(fp.first_purchase_at, s.submitted_at, day) <= 7
+                then 'within_7_days'
+            else 'after_7_days'
+        end as conversion_window
     from submissions as s
     left join repeat_takers as r on s.email = r.email
+    left join first_purchase as fp on lower(s.email) = lower(fp.email)
 ),
 
 with_functions as (
