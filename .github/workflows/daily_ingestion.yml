@@ -92,6 +92,10 @@ jobs:
           echo "::add-mask::$SPOTIFY_SHOW_ID_INNER_WORK"
           echo "SPOTIFY_SHOW_ID_INNER_WORK=$SPOTIFY_SHOW_ID_INNER_WORK" >> $GITHUB_ENV
 
+          SYNTHETIC_SCALE_FACTOR=$(gcloud secrets versions access latest --secret=SYNTHETIC_SCALE_FACTOR)
+          echo "::add-mask::$SYNTHETIC_SCALE_FACTOR"
+          echo "SYNTHETIC_SCALE_FACTOR=$SYNTHETIC_SCALE_FACTOR" >> $GITHUB_ENV
+
       - name: Run YouTube ingestion
         continue-on-error: true
         env:
@@ -166,3 +170,9 @@ jobs:
                 location: US
           EOF
           DBT_PROFILES_DIR=/tmp/dbt_profiles dbt run --project-dir transform
+
+      - name: Generate synthetic dataset
+        continue-on-error: true
+        env:
+          SYNTHETIC_SCALE_FACTOR: ${{ env.SYNTHETIC_SCALE_FACTOR }}
+        run: python scripts/generate_synthetic_data.py
