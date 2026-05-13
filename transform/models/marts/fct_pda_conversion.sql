@@ -13,6 +13,8 @@ WITH pda AS (
     submitted_at,
     personality_type
   FROM {{ ref('fct_pda_takers') }}
+  WHERE email NOT LIKE '%maxchegwyn%'
+    AND email NOT LIKE '%makeitconscious%'
 ),
 
 cluster_flags AS (
