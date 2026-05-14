@@ -131,6 +131,20 @@ def transform_dim_customers() -> None:
 
     write_table(df, "dim_customers")
 
+def transform_fct_pda_takers() -> None:
+    """
+    Anonymise emails using the same deterministic hash as fct_revenue and
+    dim_customers, preserving join relationships across all three tables.
+    All other fields — personality type, clarity scores, submission dates,
+    repeat taker flag — are unchanged.
+    """
+    df = read_table("fct_pda_takers")
+
+    df["email"] = df["email"].apply(
+        lambda x: synthetic_email(x) if pd.notna(x) else x
+    )
+
+    write_table(df, "fct_pda_takers")
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
@@ -139,6 +153,12 @@ def main():
     dataset = bigquery.Dataset(f"{PROJECT}.{TARGET_DATASET}")
     dataset.location = "US"
     client.create_dataset(dataset, exists_ok=True)
+    dataset.description = (
+        "Synthetic version of dbt_prod for portfolio publication. "
+        "Absolute monetary figures have been scaled; all ratios, "
+        "distributions, and rates are real."
+    )
+    client.update_dataset(dataset, ["description"])
     print(f"Target dataset ready: {PROJECT}.{TARGET_DATASET}\n")
 
     # Tables with no sensitive figures — copy unchanged
@@ -147,7 +167,6 @@ def main():
         "dim_videos",
         "dim_blog_posts",
         "dim_campaigns",
-        "fct_pda_takers",
         "fct_youtube_performance",
         "fct_content_calendar",
         "fct_blog_performance",
@@ -163,6 +182,7 @@ def main():
     print("Transforming sensitive tables...")
     transform_fct_revenue()
     transform_dim_customers()
+    transform_fct_pda_takers()
 
     print("\nDone. Point Power BI at make-it-conscious.dbt_synthetic.")
 
