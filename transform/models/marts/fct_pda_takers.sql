@@ -49,6 +49,11 @@ with_flags as (
         s.clarity_t,
         s.clarity_j,
         s.submission_source,
+        case
+            when lower(s.email) like '%maxchegwyn%'
+                or lower(s.email) like '%makeitconscious%'
+            then true else false
+        end as is_test,
         case when r.submission_count > 1 then true else false end as is_repeat_taker,
         case
             when row_number() over (partition by s.email order by s.submitted_at) = 1
