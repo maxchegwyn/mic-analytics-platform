@@ -18,7 +18,7 @@ orders_cleaned as (
         lower(trim(orders.billing__email))                  as email,
         orders.status                                       as order_status,
         cast(orders.total as float64)                       as order_total,
-        orders.currency_symbol                              as currency,
+        lower(replace(orders.currency_symbol, '$', 'usd'))  as currency,
         orders.payment_method                               as payment_method,
         orders.payment_method_title                         as payment_method_title,
         orders.date_created                                 as created_at,
