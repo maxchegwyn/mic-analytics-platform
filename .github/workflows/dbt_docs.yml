@@ -1,0 +1,61 @@
+name: dbt docs
+
+on:
+  workflow_run:
+    workflows: ["daily_ingestion"]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  docs:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt
+        run: pip install dbt-bigquery==1.11.1
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Write dbt profiles
+        run: |
+          mkdir -p ~/.dbt
+          cat > ~/.dbt/profiles.yml << 'EOF'
+          mic_analytics:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: oauth
+                project: make-it-conscious
+                dataset: dbt_prod
+                location: US
+                threads: 4
+          EOF
+
+      - name: Generate dbt docs
+        working-directory: transform
+        run: |
+          dbt deps
+          dbt docs generate --target prod
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: transform/target
+          publish_branch: gh-pages
