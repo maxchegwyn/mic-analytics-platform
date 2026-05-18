@@ -1,0 +1,643 @@
+version: 2
+
+models:
+
+  # =========================================================================
+  # DIMENSION TABLES
+  # =========================================================================
+
+  - name: dim_videos
+    description: >
+      One row per YouTube video on the Make it Conscious channel. Joins
+      stg_video_metadata to stg_video_playlists to derive content_type and
+      exercise_category. Content_type flags videos in the Active Imagination
+      Exercises parent playlist; exercise_category names the specific
+      sub-playlist (Core Practice, Shadow Work, Symbolic Investigation, etc.).
+    columns:
+      - name: video_id
+        description: YouTube video identifier. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: title
+        description: Video title as displayed on YouTube.
+        tests:
+          - not_null
+      - name: publish_date
+        description: Date the video was published on YouTube.
+        tests:
+          - not_null
+      - name: duration_iso
+        description: Video duration in ISO 8601 format (e.g. PT12M34S).
+      - name: tags
+        description: Pipe-delimited string of YouTube tags assigned to the video.
+      - name: content_type
+        description: >
+          Either 'exercise' for videos in the Active Imagination Exercises
+          parent playlist, or 'other' for non-exercise content.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exercise', 'other']
+      - name: exercise_category
+        description: >
+          Specific exercise sub-playlist name where applicable
+          (e.g. Core Practice, Shadow Work). Null for non-exercise videos.
+
+  - name: dim_blog_posts
+    description: >
+      One row per published blog post on makeitconscious.com, sourced from
+      the WordPress REST API. Used as the join key from GA4 page paths to
+      readable post metadata.
+    columns:
+      - name: post_id
+        description: WordPress post identifier. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: slug
+        description: >
+          URL slug for the post. Used to join GA4 page_location to post-level
+          metadata in fct_blog_performance.
+        tests:
+          - not_null
+      - name: title
+        description: Post title as displayed on the site.
+        tests:
+          - not_null
+      - name: published_at
+        description: Date the post was first published.
+      - name: modified_at
+        description: Date the post was last modified.
+      - name: url
+        description: Full public URL of the post.
+
+  - name: dim_campaigns
+    description: >
+      One row per Mailchimp email campaign. Provides campaign-level metadata
+      and aggregate engagement rates for use in campaign performance analysis.
+    columns:
+      - name: campaign_id
+        description: Mailchimp campaign identifier. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: title
+        description: Internal campaign title from Mailchimp settings.
+      - name: subject_line
+        description: Subject line of the email as sent.
+      - name: sent_at
+        description: Timestamp the campaign was sent.
+      - name: emails_sent
+        description: Total number of emails despatched in the campaign.
+      - name: open_rate
+        description: Proportion of recipients who opened the email, as a decimal.
+      - name: click_rate
+        description: Proportion of recipients who clicked a link, as a decimal.
+
+  - name: dim_customers
+    description: >
+      One row per email address. The master customer record for the Make it
+      Conscious platform. Mailchimp members is the spine; the model left-joins
+      JotForm submissions, WooCommerce orders and Stripe charges on email to
+      produce a unified customer view. Enables cross-platform lifetime value,
+      conversion analysis and audience segmentation by personality type.
+    columns:
+      - name: email
+        description: Lowercased email address. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: first_name
+        description: First name from the most recent JotForm submission for this email.
+      - name: personality_type
+        description: >
+          Canonical four-letter type code (e.g. INFJ) sourced from the
+          Mailchimp custom field populated by the JotForm integration.
+      - name: pda_url
+        description: Personalised PDA results page URL for the customer.
+      - name: mailchimp_status
+        description: >
+          Mailchimp subscription status (subscribed, unsubscribed, cleaned,
+          pending).
+      - name: signup_source
+        description: >
+          Source attribution for the subscriber's entry to the Mailchimp
+          list, where available from the source data.
+      - name: subscribed_at
+        description: Timestamp the email was first added to the Mailchimp list.
+      - name: opted_in_at
+        description: >
+          Timestamp the email actively opted in (distinct from subscribed_at
+          where Mailchimp records the two events separately).
+      - name: avg_open_rate
+        description: Mailchimp-reported average open rate for this subscriber.
+      - name: avg_click_rate
+        description: Mailchimp-reported average click rate for this subscriber.
+      - name: first_submission_date
+        description: Earliest JotForm submission timestamp for this email.
+      - name: submission_count
+        description: Total number of JotForm submissions made by this email.
+      - name: latest_clarity_e
+        description: >
+          E/I clarity score from the most recent PDA submission. Extracted
+          via REGEXP_EXTRACT from the results URL.
+      - name: latest_clarity_s
+        description: S/N clarity score from the most recent PDA submission.
+      - name: latest_clarity_t
+        description: T/F clarity score from the most recent PDA submission.
+      - name: latest_clarity_j
+        description: J/P clarity score from the most recent PDA submission.
+      - name: total_wc_spend
+        description: Sum of WooCommerce order line totals for this email, in GBP.
+      - name: first_purchase_date
+        description: Earliest WooCommerce order date for this email.
+      - name: purchase_count
+        description: Count of distinct WooCommerce orders attributed to this email.
+      - name: total_stripe_spend
+        description: >
+          Sum of Stripe charges for this email, in GBP. Includes WooCommerce
+          and LearnWorlds transactions. The authoritative revenue figure
+          per customer.
+
+  # =========================================================================
+  # FACT TABLES — PDA
+  # =========================================================================
+
+  - name: fct_pda_takers
+    description: >
+      One row per JotForm submission to the Personality Dynamics Assessment.
+      No deduplication — repeat takers produce multiple rows. The model also
+      derives Jungian function attribution from the four-letter type
+      (dominant and auxiliary functions, their MiC archetype names, the
+      type pair, and temperament). Joins to fct_revenue on email for
+      conversion analysis.
+    columns:
+      - name: submission_id
+        description: JotForm submission identifier. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: email
+        description: Lowercased email address of the taker.
+        tests:
+          - not_null
+      - name: submitted_at
+        description: Timestamp the submission was completed in JotForm.
+        tests:
+          - not_null
+      - name: personality_type
+        description: Four-letter MBTI-style type code returned by the assessment (e.g. INFJ).
+      - name: results_url
+        description: Personalised URL where the taker can view their results.
+      - name: checkout_url
+        description: Personalised PDA Report checkout URL presented to the taker.
+      - name: clarity_e
+        description: E/I clarity score extracted from the results URL.
+      - name: clarity_s
+        description: S/N clarity score extracted from the results URL.
+      - name: clarity_t
+        description: T/F clarity score extracted from the results URL.
+      - name: clarity_j
+        description: J/P clarity score extracted from the results URL.
+      - name: submission_source
+        description: >
+          Either 'standard' for the main PDA form or 'manual_opt' for the
+          manual opt-in form variant.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['standard', 'manual_opt']
+      - name: is_repeat_taker
+        description: >
+          TRUE if this email appears in more than one submission across the
+          full table; FALSE otherwise.
+      - name: is_first_submission
+        description: >
+          TRUE if this is the earliest submission for this email; FALSE for
+          all subsequent submissions by the same taker.
+      - name: is_latest_submission
+        description: >
+          TRUE if this is the most recent submission for this email; FALSE
+          for all earlier submissions by the same taker.
+      - name: is_test
+        description: >
+          TRUE for test or internal submissions that should be excluded from
+          analytical aggregates; FALSE for genuine taker submissions.
+      - name: first_purchase_at
+        description: >
+          Timestamp of the first qualifying PDA Report purchase by this
+          email after this submission. NULL where no purchase occurred.
+      - name: hours_to_first_purchase
+        description: >
+          Hours between this submission and the first qualifying purchase
+          by the same email. NULL where no purchase occurred.
+      - name: conversion_window
+        description: >
+          Categorical bucket describing the conversion window relative to
+          this submission (e.g. immediate, delayed, none).
+      - name: dominant_function
+        description: >
+          Dominant Jungian function code (e.g. Ni, Te) derived from the
+          four-letter personality_type.
+      - name: auxiliary_function
+        description: >
+          Auxiliary Jungian function code (e.g. Fe, Si) derived from the
+          four-letter personality_type.
+      - name: dominant_mic_name
+        description: >
+          Make it Conscious archetype name for the dominant function
+          (e.g. Seer for Ni, Commander for Te).
+      - name: auxiliary_mic_name
+        description: >
+          Make it Conscious archetype name for the auxiliary function.
+      - name: type_pair_mic
+        description: >
+          Two-archetype combination naming the type
+          (e.g. Seer-Commander for INTJ).
+      - name: temperament
+        description: >
+          Keirsey temperament category derived from the four-letter type
+          (Rational, Idealist, Guardian, Artisan).
+      - name: judging_function
+        description: Judging function code (Te, Ti, Fe, or Fi) for this type.
+      - name: perceiving_function
+        description: Perceiving function code (Ne, Ni, Se, or Si) for this type.
+      - name: judging_mic_name
+        description: Make it Conscious archetype name for the judging function.
+      - name: perceiving_mic_name
+        description: Make it Conscious archetype name for the perceiving function.
+
+  - name: fct_pda_conversion
+    description: >
+      One row per submission cluster per email. A cluster groups closely-spaced
+      submissions by the same taker into a single conversion window, so a
+      taker who submits twice in quick succession produces one row rather
+      than two. submission_id is the identifier of the first submission in
+      each cluster and remains unique. Where a later cluster exists for the
+      same email, earlier clusters are flagged superseded so that conversion
+      analysis can either count only the most recent cluster per email or
+      include the full history depending on the question. Conversions are
+      identified by joining to fct_revenue on email, filtered to purchases
+      where the product name contains 'Personality Dynamics Assessment'.
+      Immediate conversions occur within 24 hours of the first submission in
+      the cluster; delayed conversions occur more than 24 hours after.
+    columns:
+      - name: submission_id
+        description: >
+          JotForm submission identifier of the first submission in the
+          cluster. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: email
+        description: Lowercased email address of the taker.
+        tests:
+          - not_null
+      - name: personality_type
+        description: >
+          Four-letter type code associated with the cluster, taken from the
+          relevant submission(s).
+      - name: submitted_at
+        description: >
+          Timestamp of the first submission in the cluster. Aliased from
+          first_submitted_at for consistency with fct_pda_takers.
+        tests:
+          - not_null
+      - name: last_submitted_at
+        description: >
+          Timestamp of the most recent submission in the cluster. Equal to
+          submitted_at for single-submission clusters.
+      - name: first_purchase_after_submission
+        description: >
+          Timestamp of the first qualifying PDA Report purchase after the
+          first submission in the cluster. NULL where no conversion occurred.
+      - name: superseded
+        description: >
+          TRUE where a later cluster exists for the same email; FALSE for
+          the most recent cluster per email. Allows analysis to filter to
+          the latest cluster per taker without recomputing.
+        tests:
+          - not_null
+      - name: conversion_type
+        description: >
+          One of four values. 'immediate' for purchases within 24 hours of
+          the first submission in the cluster. 'delayed' for purchases more
+          than 24 hours after. 'superseded' for clusters where a later
+          cluster exists for the same email and no conversion occurred in
+          this cluster. 'non_converter' for the most recent cluster per
+          email where no conversion occurred.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['immediate', 'delayed', 'superseded', 'non_converter']
+      - name: converted
+        description: >
+          TRUE if a qualifying PDA Report purchase occurred after the first
+          submission in the cluster; FALSE otherwise.
+        tests:
+          - not_null
+      - name: days_to_conversion
+        description: >
+          Integer days between the first submission in the cluster and the
+          first qualifying purchase. NULL where no conversion occurred.
+
+  # =========================================================================
+  # FACT TABLES — REVENUE
+  # =========================================================================
+
+  - name: fct_revenue
+    description: >
+      One row per transaction. The source of truth for revenue across the
+      Make it Conscious platform, covering WooCommerce purchases, LearnWorlds
+      purchases, and YouTube AdSense. WooCommerce and LearnWorlds rows
+      originate from Stripe charges and carry an email. YouTube AdSense rows
+      are channel-level monetisation and carry no email — analyses joining
+      fct_revenue to dim_customers should filter on platform IN
+      ('woocommerce', 'learnworlds') or use INNER JOIN.
+    columns:
+      - name: transaction_id
+        description: Stripe charge identifier or YouTube AdSense row identifier. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: email
+        description: >
+          Lowercased customer email address. NULL for YouTube AdSense rows
+          (channel-level revenue with no associated customer).
+      - name: amount
+        description: >
+          Charge amount in major currency units (Stripe stores minor units;
+          this field divides by 100).
+        tests:
+          - not_null
+      - name: currency
+        description: ISO 4217 currency code (typically GBP).
+      - name: created_at
+        description: Timestamp the transaction was created.
+        tests:
+          - not_null
+      - name: payment_method_type
+        description: Payment method used (card, link, etc.). NULL for YouTube AdSense rows.
+      - name: product_name
+        description: >
+          Product name from Stripe metadata or WooCommerce line items.
+          Used to filter PDA Report purchases via LIKE '%Personality
+          Dynamics Assessment%'. NULL for YouTube AdSense rows.
+      - name: platform
+        description: >
+          Source platform of the transaction. 'woocommerce' and
+          'learnworlds' are customer-attributable Stripe charges; 'youtube'
+          is channel-level AdSense revenue with no customer attribution.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['woocommerce', 'learnworlds', 'youtube']
+
+  # =========================================================================
+  # FACT TABLES — YOUTUBE
+  # =========================================================================
+
+  - name: fct_youtube_performance
+    description: >
+      One row per video per quarter-since-publication. Unpivots daily YouTube
+      data into quarterly buckets aligned to each video's own publish date
+      (calendar-month quarters using relativedelta, consistent with the
+      capstone methodology). The analytical backbone for the decay curve,
+      category performance and lifecycle projection work. The empirical
+      decay rate of 0.879 was derived in the capstone from the weighted
+      average of Q8/Q7 through Q11/Q10 median ratios (n=254).
+    columns:
+      - name: video_id
+        description: YouTube video identifier. Composite key with quarter_number.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_videos')
+                field: video_id
+              config:
+                severity: warn
+                store_failures: true
+      - name: quarter_number
+        description: Integer quarter since publication (1 = first three months).
+        tests:
+          - not_null
+      - name: watch_hours
+        description: Total watch hours observed in this quarter for this video.
+      - name: views
+        description: Total views observed in this quarter for this video.
+      - name: estimated_revenue
+        description: YouTube AdSense estimated revenue in GBP for this quarter.
+      - name: subscribers_gained
+        description: Subscribers gained attributed to this video in this quarter.
+      - name: quarter_start_date
+        description: Calendar date the quarter window begins for this video.
+      - name: quarter_end_date
+        description: Calendar date the quarter window ends for this video.
+      - name: is_complete_quarter
+        description: >
+          TRUE where the full quarter of daily data is available, FALSE for
+          partial quarters at the current edge of the data.
+
+  - name: fct_youtube_channel_daily
+    description: >
+      One row per calendar date. Channel-level daily aggregates from the
+      YouTube Analytics API. Used for cumulative watch hours, subscriber
+      net change and channel-wide time series on the dashboard.
+    columns:
+      - name: date
+        description: Calendar date. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: views
+        description: Total channel views on this date.
+      - name: watch_hours
+        description: Total channel watch hours on this date.
+      - name: subscribers_gained
+        description: Subscribers gained on this date.
+      - name: subscribers_lost
+        description: Subscribers lost on this date.
+      - name: subscribers_net
+        description: Net subscriber change on this date (gained minus lost).
+      - name: estimated_revenue
+        description: YouTube AdSense estimated revenue in GBP on this date.
+      - name: likes
+        description: Total channel likes received on this date.
+      - name: comments
+        description: Total channel comments received on this date.
+      - name: shares
+        description: Total channel shares on this date.
+
+  - name: fct_youtube_video_daily
+    description: >
+      One row per video per calendar date. Per-video daily aggregates from
+      the YouTube Analytics API. The most granular YouTube fact table,
+      enabling per-video lifecycle analysis at daily resolution.
+    columns:
+      - name: date
+        description: Calendar date. Composite key with video_id.
+        tests:
+          - not_null
+      - name: video_id
+        description: YouTube video identifier. Composite key with quarter_number.
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_videos')
+                field: video_id
+              config:
+                severity: warn
+                store_failures: true
+      - name: title
+        description: Video title at the time of the daily snapshot.
+      - name: content_type
+        description: >
+          Content type carried through from dim_videos — 'exercise' or 'other'.
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['exercise', 'other']
+      - name: exercise_category
+        description: Exercise sub-category carried through from dim_videos. Null for non-exercise videos.
+      - name: watch_hours
+        description: Watch hours for this video on this date.
+      - name: views
+        description: Views for this video on this date.
+      - name: estimated_revenue
+        description: YouTube AdSense estimated revenue in GBP for this video on this date.
+      - name: subscribers_gained
+        description: Subscribers gained attributed to this video on this date.
+      - name: likes
+        description: Likes received by this video on this date.
+      - name: comments
+        description: Comments received by this video on this date.
+      - name: shares
+        description: Shares of this video on this date.
+
+  - name: fct_youtube_daily_wh_by_type
+    description: >
+      One row per year_month per content_type. A pre-aggregated cut of
+      fct_youtube_video_daily summing watch hours by content_type for
+      efficient time-series rendering in BI tools. Supports the three-line
+      cumulative watch hours chart (Total / AIE / Non-AIE) on the YouTube
+      Performance tab without requiring blended data sources.
+    columns:
+      - name: year_month
+        description: >
+          Year-month string in YYYY-MM format. Composite key with
+          content_type.
+        tests:
+          - not_null
+      - name: year_month_sort
+        description: >
+          Integer year-month value (YYYYMM) for sorting display strings
+          chronologically. Set as the sort field on year_month.
+        tests:
+          - not_null
+      - name: content_type
+        description: Either 'exercise' or 'other'.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['exercise', 'other']
+      - name: watch_hours
+        description: >
+          Total watch hours in this year_month across all videos of this
+          content_type.
+
+  - name: fct_aie_decay_curve
+    description: >
+      One row per quarter_number. Aggregated percentile statistics of
+      cumulative watch hours across Active Imagination Exercise videos at
+      each quarter since publication. Powers the canonical decay curve
+      visualisation. Currently not consumed by any dashboard but retained
+      for future use.
+    columns:
+      - name: quarter_number
+        description: Integer quarter since publication. Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: n_videos
+        description: >
+          Number of AIE videos that have reached this quarter of life and
+          contribute to the percentile statistics.
+        tests:
+          - not_null
+      - name: p25_cumulative_wh
+        description: 25th percentile of cumulative watch hours across AIE videos at this quarter.
+      - name: p50_cumulative_wh
+        description: Median cumulative watch hours across AIE videos at this quarter.
+      - name: p75_cumulative_wh
+        description: 75th percentile of cumulative watch hours across AIE videos at this quarter.
+
+  # =========================================================================
+  # FACT TABLES — CONTENT AND BLOG
+  # =========================================================================
+
+  - name: fct_content_calendar
+    description: >
+      One row per content publish event across all platforms. UNION of
+      YouTube videos, WordPress blog posts and Spotify podcast episodes
+      (both the Make it Conscious podcast and the Inner Work podcast).
+      Enables time-lag correlation between publish events and downstream
+      metrics such as PDA signups and subscriber growth.
+    columns:
+      - name: content_id
+        description: Identifier from the source platform (video_id, post_id or episode_id). Primary key.
+        tests:
+          - not_null
+          - unique
+      - name: title
+        description: Title of the content as published.
+      - name: published_at
+        description: Date or timestamp the content was published.
+        tests:
+          - not_null
+      - name: content_type
+        description: One of 'youtube_video', 'blog_post' or 'podcast_episode'.
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['youtube_video', 'blog_post', 'podcast_episode']
+      - name: platform
+        description: Source platform — YouTube, WordPress or Spotify.
+        tests:
+          - not_null
+      - name: podcast
+        description: >
+          For Spotify rows only, identifies whether the episode belongs to
+          'mic' (Make it Conscious) or 'inner_work'. Null for non-podcast rows.
+
+  - name: fct_blog_performance
+    description: >
+      One row per blog post per day, sourced from the GA4 BigQuery export.
+      Note that the GA4 export only began on 21 March 2026 — no historical
+      backfill is possible and the model is forward-looking from that date.
+      Joins to dim_blog_posts on slug or post_id to attach readable post
+      titles.
+    columns:
+      - name: date
+        description: Calendar date from the GA4 export. Composite key with post_id.
+        tests:
+          - not_null
+      - name: post_id
+        description: WordPress post identifier resolved by joining slug to dim_blog_posts.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_blog_posts')
+                field: post_id
+      - name: slug
+        description: URL slug used to resolve the post identifier from GA4 page_location.
+      - name: source_medium
+        description: GA4 source/medium attribution string.
+      - name: sessions
+        description: Count of GA4 sessions on this post on this date.

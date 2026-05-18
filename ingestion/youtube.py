@@ -18,6 +18,14 @@ BQ_DATASET = os.environ.get("BQ_DATASET")
 YOUTUBE_START_DATE = os.environ.get("YOUTUBE_START_DATE", "2013-01-01")
 YOUTUBE_MODE = os.environ.get("YOUTUBE_MODE", "incremental")
 
+# When true, supplement the uploads playlist with search.list to catch
+# unlisted videos and playlist-orphaned content. Costs ~800 extra quota
+# units per run, so leave off for routine daily runs and enable when
+# doing a historical backfill or when investigating data quality gaps.
+YOUTUBE_EXHAUSTIVE_DISCOVERY = os.environ.get(
+    "YOUTUBE_EXHAUSTIVE_DISCOVERY", "false"
+).lower() == "true"
+
 EXERCISE_PLAYLIST_IDS = {
     "PLeuFwuWK5O2MMxqoPMkk9eEbVIrbwq-7B": "Active Imagination Exercises",
     "PLeuFwuWK5O2PWOC6QlGwXS2aWnaPTTF-8": "Core Practice",
@@ -59,37 +67,91 @@ def get_authenticated_service():
     return build("youtubeAnalytics", "v2", credentials=creds)
 
 
-def get_channel_videos():
+def get_youtube_data_service():
+    """Build a YouTube Data API service from the cached OAuth token."""
     with open(TOKEN_FILE, 'r') as f:
         token_data = json.loads(f.read().strip())
     creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-    youtube = build("youtube", "v3", credentials=creds)
-    videos = []
+    return build("youtube", "v3", credentials=creds)
+
+
+def get_videos_from_uploads_playlist(youtube):
+    """Get video IDs from the channel's uploads auto-playlist. Cheap (~9 quota units total)."""
+    video_ids = set()
     request = youtube.channels().list(part="contentDetails", mine=True)
     response = request.execute()
     uploads_playlist = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
     next_page_token = None
     while True:
-        pl_request = youtube.playlistItems().list(
+        pl_response = youtube.playlistItems().list(
             part="contentDetails",
             playlistId=uploads_playlist,
             maxResults=50,
             pageToken=next_page_token,
-        )
-        pl_response = pl_request.execute()
-        for item in pl_response["items"]:
-            videos.append(item["contentDetails"]["videoId"])
+        ).execute()
+        for item in pl_response.get("items", []):
+            video_ids.add(item["contentDetails"]["videoId"])
         next_page_token = pl_response.get("nextPageToken")
         if not next_page_token:
             break
-    return videos
+    return video_ids
+
+
+def get_videos_from_search(youtube):
+    """
+    Get video IDs via search.list with forMine=True. Catches unlisted videos and
+    playlist-orphaned content that playlistItems.list misses. Expensive (~800
+    quota units per ~400 videos at 50 per page).
+    """
+    video_ids = set()
+    next_page_token = None
+    while True:
+        search_response = youtube.search().list(
+            part="id",
+            forMine=True,
+            type="video",
+            maxResults=50,
+            pageToken=next_page_token,
+        ).execute()
+        for item in search_response.get("items", []):
+            video_ids.add(item["id"]["videoId"])
+        next_page_token = search_response.get("nextPageToken")
+        if not next_page_token:
+            break
+    return video_ids
+
+
+def get_channel_videos():
+    """
+    Discover all video IDs on the channel.
+
+    Always queries the uploads playlist (cheap). When YOUTUBE_EXHAUSTIVE_DISCOVERY=true,
+    also queries search.list to catch unlisted videos and playlist-orphaned content.
+    The union of both sources is returned, sorted for stable iteration order.
+    """
+    youtube = get_youtube_data_service()
+
+    uploads_ids = get_videos_from_uploads_playlist(youtube)
+    print(f"Uploads playlist returned {len(uploads_ids)} videos")
+
+    if YOUTUBE_EXHAUSTIVE_DISCOVERY:
+        search_ids = get_videos_from_search(youtube)
+        print(f"search.list returned {len(search_ids)} videos")
+        orphans = search_ids - uploads_ids
+        if orphans:
+            print(f"Found {len(orphans)} video(s) in search but not in uploads playlist:")
+            for vid in sorted(orphans):
+                print(f"  {vid}")
+        all_ids = uploads_ids | search_ids
+    else:
+        all_ids = uploads_ids
+
+    return sorted(all_ids)
 
 
 def fetch_video_metadata(video_ids):
-    with open(TOKEN_FILE, 'r') as f:
-        token_data = json.loads(f.read().strip())
-    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-    youtube = build("youtube", "v3", credentials=creds)
+    youtube = get_youtube_data_service()
     metadata = []
     for i in range(0, len(video_ids), 50):
         batch = video_ids[i:i+50]
@@ -112,10 +174,7 @@ def fetch_video_metadata(video_ids):
 
 
 def fetch_playlist_memberships():
-    with open(TOKEN_FILE, 'r') as f:
-        token_data = json.loads(f.read().strip())
-    creds = Credentials.from_authorized_user_info(token_data, SCOPES)
-    youtube = build("youtube", "v3", credentials=creds)
+    youtube = get_youtube_data_service()
 
     memberships = []
     for playlist_id, playlist_title in EXERCISE_PLAYLIST_IDS.items():
@@ -221,13 +280,13 @@ def youtube_daily_metrics(start_date: str, end_date: str):
     service = get_authenticated_service()
     video_ids = get_channel_videos()
     print(f"Found {len(video_ids)} videos")
-    
+
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    
+
     for i, video_id in enumerate(video_ids):
         print(f"Fetching {i+1}/{len(video_ids)}: {video_id}")
-        
+
         chunk_start = start_dt
         while chunk_start < end_dt:
             chunk_end = min(chunk_start + timedelta(days=365), end_dt)
@@ -286,6 +345,9 @@ def main():
     else:
         start_date = YOUTUBE_START_DATE
         print(f"Historical mode — pulling from {start_date}")
+
+    if YOUTUBE_EXHAUSTIVE_DISCOVERY:
+        print("Exhaustive discovery enabled — search.list will supplement uploads playlist")
 
     end_date = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
 
