@@ -82,10 +82,11 @@ mic-analytics-platform/
 
 ## dbt Models
 
-**Staging (12 models)** — cleaning and standardisation only: column renames, type casts, simple filters, deduplication where required. No business logic at this layer.
+**Staging (13 models)** — cleaning and standardisation only: column renames, type casts, simple filters, deduplication where required. No business logic at this layer.
 
 | Model | Source | Key transforms |
 |---|---|---|
+| `stg_ga4_events` | `analytics_322691207.events_*` | Page view events unpacked; forward-looking from March 2026 |
 | `stg_jotform` | `raw_jotform.submissions_*` | UNION ALL of standard and manual opt submissions; clarity scores extracted via `REGEXP_EXTRACT` |
 | `stg_mailchimp_campaigns` | `raw_mailchimp.campaigns` | `status = 'sent'` filter; open/click rates from `__v_double` columns |
 | `stg_mailchimp_email_activity` | `raw_mailchimp.email_activity` | Child table left joined to parent on `_dlt_parent_id` |
@@ -103,21 +104,21 @@ mic-analytics-platform/
 
 | Model | Type | Description |
 |---|---|---|
-| `dim_blog_posts` | Dimension | WordPress posts with category tags |
-| `dim_campaigns` | Dimension | Mailchimp campaigns with send and engagement metrics |
-| `dim_customers` | Dimension | Unified customer record across Stripe, WooCommerce, Mailchimp, JotForm |
-| `dim_videos` | Dimension | Video metadata with playlist and category classifications |
-| `fct_aie_decay_curve` | Fact | Per-video quarterly decay data for the projection model |
-| `fct_blog_performance` | Fact | Post-level GA4 engagement (forward-looking from export start) |
-| `fct_content_calendar` | Fact | Cross-platform publish events: YouTube, blog, podcast |
-| `fct_pda_conversion` | Fact | PDA submission to purchase linkage; conversion type and lead time |
-| `fct_pda_takers` | Fact | One row per PDA submission; superseded flag for retakers |
-| `fct_revenue` | Fact | Unified revenue: WooCommerce, Stripe (Hestia), YouTube AdSense |
-| `fct_youtube_calendar` | Fact | Video publish events joined to channel performance |
-| `fct_youtube_channel_daily` | Fact | Channel-level daily metrics |
-| `fct_youtube_daily_wh_by_type` | Fact | Watch hours by content category, daily |
-| `fct_youtube_performance` | Fact | Per-video quarterly performance with decay projections |
-| `fct_youtube_video_daily` | Fact | Per-video daily metrics |
+| `dim_blog_posts` | Dimension | WordPress published posts: slug, title, URL, publish and modified dates |
+| `dim_campaigns` | Dimension | Sent Mailchimp campaigns with open and click rates |
+| `dim_customers` | Dimension | Unified customer record joining Mailchimp, JotForm, WooCommerce, and Stripe on email |
+| `dim_videos` | Dimension | Video metadata with `content_type` (exercise/other) and `exercise_category` derived from playlist membership |
+| `fct_aie_decay_curve` | Fact | Quarterly P25/P50/P75 cumulative watch hours across AIE exercise videos; basis for the decay projection model |
+| `fct_blog_performance` | Fact | GA4 page-view sessions per post per day by source/medium (forward-looking from March 2026 export start) |
+| `fct_content_calendar` | Fact | Cross-platform publish events unified across YouTube, WordPress, and Spotify |
+| `fct_pda_conversion` | Fact | Submission-to-purchase conversion with 24-hour clustering of repeat submissions; `conversion_type` distinguishes immediate, delayed, superseded, and non-converter |
+| `fct_pda_takers` | Fact | One row per JotForm submission; carries dominant/auxiliary functions, MiC type names, temperament, conversion window, and test/repeat taker flags |
+| `fct_revenue` | Fact | Unified revenue across Stripe (with WooCommerce product join), PayPal WooCommerce orders, and YouTube AdSense |
+| `fct_youtube_calendar` | Fact | Daily video metrics joined to `dim_videos` for content type and category filtering |
+| `fct_youtube_channel_daily` | Fact | Channel-level daily metrics: views, watch hours, net subscribers, revenue |
+| `fct_youtube_daily_wh_by_type` | Fact | Monthly watch hours aggregated by `content_type` (exercise vs other); used for cumulative trend charts |
+| `fct_youtube_performance` | Fact | Per-video quarterly watch hours using `DATE_ADD` quarter bucketing; `is_complete_quarter` flag for decay analysis |
+| `fct_youtube_video_daily` | Fact | Per-video daily metrics joined to `dim_videos` for content type and category |
 
 ---
 
