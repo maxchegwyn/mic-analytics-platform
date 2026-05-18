@@ -13,7 +13,7 @@ Sources          Ingestion         Warehouse         Transform         BI
 ────────         ─────────         ─────────         ─────────         ──
 YouTube    ──►                                                         Power BI
 Mailchimp  ──►   dlt (Python)  ──► BigQuery      ──► dbt Core     ──► (4 tabs)
-Stripe     ──►   pipelines         raw layer         12 staging
+Stripe     ──►   pipelines         raw layer         13 staging
 WooCommerce──►   (GitHub                             15 mart
 JotForm    ──►   Actions)          make-it-          models
 WordPress  ──►                     conscious
@@ -53,7 +53,7 @@ mic-analytics-platform/
 │   └── generate_synthetic_data.py
 ├── transform/                 # dbt Core project
 │   ├── models/
-│   │   ├── staging/           # 12 models — one per source table, cleaning only
+│   │   ├── staging/           # 13 models — one per source table, cleaning only
 │   │   └── marts/             # 15 models — cross-source joins, business logic
 │   └── dbt_project.yml
 ├── .github/
