@@ -51,6 +51,7 @@ jobs:
         working-directory: transform
         run: |
           dbt deps
+          dbt parse --target prod
           dbt docs generate --target prod --no-compile
 
       - name: Deploy to GitHub Pages
