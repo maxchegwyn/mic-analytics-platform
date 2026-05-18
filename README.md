@@ -70,13 +70,15 @@ mic-analytics-platform/
 
 ## Data Stack
 
-| Layer | Tool | Notes |
-|---|---|---|
-| Ingestion | [dlt](https://dlthub.com) (Python) | Schema inference, incremental loading, automatic BigQuery table creation |
-| Warehouse | BigQuery (`make-it-conscious` project) | Raw layer untouched; `dbt_prod` dataset holds all transformed tables |
-| Transformation | dbt Core 1.11 | Staging/marts separation; `dbt docs` generates lineage automatically |
-| Orchestration | GitHub Actions | WIF authentication to GCP; daily cron at 04:00 UTC |
-| BI | Power BI | Import mode; single .pbix; daily refresh from `dbt_prod` |
+
+| Layer          | Tool                                   | Notes                                                                    |
+| -------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| Ingestion      | [dlt](https://dlthub.com) (Python)     | Schema inference, incremental loading, automatic BigQuery table creation |
+| Warehouse      | BigQuery (`make-it-conscious` project) | Raw layer untouched; `dbt_prod` dataset holds all transformed tables     |
+| Transformation | dbt Core 1.11                          | Staging/marts separation; `dbt docs` generates lineage automatically     |
+| Orchestration  | GitHub Actions                         | WIF authentication to GCP; daily cron at 04:00 UTC                       |
+| BI             | Power BI                               | Import mode; single .pbix; daily refresh from `dbt_prod`                 |
+
 
 ---
 
@@ -84,41 +86,45 @@ mic-analytics-platform/
 
 **Staging (13 models)** — cleaning and standardisation only: column renames, type casts, simple filters, deduplication where required. No business logic at this layer.
 
-| Model | Source | Key transforms |
-|---|---|---|
-| `stg_ga4_events` | `analytics_322691207.events_*` | Page view events unpacked; forward-looking from March 2026 |
-| `stg_jotform` | `raw_jotform.submissions_*` | UNION ALL of standard and manual opt submissions; clarity scores extracted via `REGEXP_EXTRACT` |
-| `stg_mailchimp_campaigns` | `raw_mailchimp.campaigns` | `status = 'sent'` filter; open/click rates from `__v_double` columns |
-| `stg_mailchimp_email_activity` | `raw_mailchimp.email_activity` | Child table left joined to parent on `_dlt_parent_id` |
-| `stg_mailchimp_members` | `raw_mailchimp.members` | QUALIFY dedup on email (latest `last_changed`) |
-| `stg_spotify_episodes` | `raw_spotify.episodes_*` | UNION ALL of both podcast episode tables; `duration_ms / 60000` to minutes |
-| `stg_stripe_charges` | `raw_stripe.charges` | `amount / 100.0`; `paid = true AND refunded = false` filter |
-| `stg_video_metadata` | `raw_youtube.raw_video_metadata` | `publish_date` cast to DATE; QUALIFY dedup on `video_id` |
-| `stg_video_playlists` | `raw_youtube.raw_video_playlists` | Column rename only |
-| `stg_woocommerce_orders` | `raw_woocommerce.orders` + `orders__line_items` | Line item unnest via `_dlt_parent_id`; `total` cast to FLOAT64; `completed` and `processing` statuses only |
-| `stg_wordpress_posts` | `raw_wordpress.posts` | `status = 'publish'` filter; `title__rendered` renamed |
-| `stg_youtube` | `raw_youtube.raw_video_daily_metrics` | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `video_id, date` |
-| `stg_youtube_channel` | `raw_youtube.raw_channel_daily_metrics` | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `date` |
+
+| Model                          | Source                                          | Key transforms                                                                                             |
+| ------------------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `stg_ga4_events`               | `analytics_322691207.events_`*                  | Page view events unpacked; forward-looking from March 2026                                                 |
+| `stg_jotform`                  | `raw_jotform.submissions_*`                     | UNION ALL of standard and manual opt submissions; clarity scores extracted via `REGEXP_EXTRACT`            |
+| `stg_mailchimp_campaigns`      | `raw_mailchimp.campaigns`                       | `status = 'sent'` filter; open/click rates from `__v_double` columns                                       |
+| `stg_mailchimp_email_activity` | `raw_mailchimp.email_activity`                  | Child table left joined to parent on `_dlt_parent_id`                                                      |
+| `stg_mailchimp_members`        | `raw_mailchimp.members`                         | QUALIFY dedup on email (latest `last_changed`)                                                             |
+| `stg_spotify_episodes`         | `raw_spotify.episodes_*`                        | UNION ALL of both podcast episode tables; `duration_ms / 60000` to minutes                                 |
+| `stg_stripe_charges`           | `raw_stripe.charges`                            | `amount / 100.0`; `paid = true AND refunded = false` filter                                                |
+| `stg_video_metadata`           | `raw_youtube.raw_video_metadata`                | `publish_date` cast to DATE; QUALIFY dedup on `video_id`                                                   |
+| `stg_video_playlists`          | `raw_youtube.raw_video_playlists`               | Column rename only                                                                                         |
+| `stg_woocommerce_orders`       | `raw_woocommerce.orders` + `orders__line_items` | Line item unnest via `_dlt_parent_id`; `total` cast to FLOAT64; `completed` and `processing` statuses only |
+| `stg_wordpress_posts`          | `raw_wordpress.posts`                           | `status = 'publish'` filter; `title__rendered` renamed                                                     |
+| `stg_youtube`                  | `raw_youtube.raw_video_daily_metrics`           | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `video_id, date`                       |
+| `stg_youtube_channel`          | `raw_youtube.raw_channel_daily_metrics`         | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `date`                                 |
+
 
 **Marts (15 models)** — cross-source joins and business logic. Materialised as tables in `dbt_prod`.
 
-| Model | Type | Description |
-|---|---|---|
-| `dim_blog_posts` | Dimension | WordPress published posts: slug, title, URL, publish and modified dates |
-| `dim_campaigns` | Dimension | Sent Mailchimp campaigns with open and click rates |
-| `dim_customers` | Dimension | Unified customer record joining Mailchimp, JotForm, WooCommerce, and Stripe on email |
-| `dim_videos` | Dimension | Video metadata with `content_type` (exercise/other) and `exercise_category` derived from playlist membership |
-| `fct_aie_decay_curve` | Fact | Quarterly P25/P50/P75 cumulative watch hours across AIE exercise videos; basis for the decay projection model |
-| `fct_blog_performance` | Fact | GA4 page-view sessions per post per day by source/medium (forward-looking from March 2026 export start) |
-| `fct_content_calendar` | Fact | Cross-platform publish events unified across YouTube, WordPress, and Spotify |
-| `fct_pda_conversion` | Fact | Submission-to-purchase conversion with 24-hour clustering of repeat submissions; `conversion_type` distinguishes immediate, delayed, superseded, and non-converter |
-| `fct_pda_takers` | Fact | One row per JotForm submission; carries dominant/auxiliary functions, MiC type names, temperament, conversion window, and test/repeat taker flags |
-| `fct_revenue` | Fact | Unified revenue across Stripe (with WooCommerce product join), PayPal WooCommerce orders, and YouTube AdSense |
-| `fct_youtube_calendar` | Fact | Daily video metrics joined to `dim_videos` for content type and category filtering |
-| `fct_youtube_channel_daily` | Fact | Channel-level daily metrics: views, watch hours, net subscribers, revenue |
-| `fct_youtube_daily_wh_by_type` | Fact | Monthly watch hours aggregated by `content_type` (exercise vs other); used for cumulative trend charts |
-| `fct_youtube_performance` | Fact | Per-video quarterly watch hours using `DATE_ADD` quarter bucketing; `is_complete_quarter` flag for decay analysis |
-| `fct_youtube_video_daily` | Fact | Per-video daily metrics joined to `dim_videos` for content type and category |
+
+| Model                          | Type      | Description                                                                                                                                                        |
+| ------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dim_blog_posts`               | Dimension | WordPress published posts: slug, title, URL, publish and modified dates                                                                                            |
+| `dim_campaigns`                | Dimension | Sent Mailchimp campaigns with open and click rates                                                                                                                 |
+| `dim_customers`                | Dimension | Unified customer record joining Mailchimp, JotForm, WooCommerce, and Stripe on email                                                                               |
+| `dim_videos`                   | Dimension | Video metadata with `content_type` (exercise/other) and `exercise_category` derived from playlist membership                                                       |
+| `fct_aie_decay_curve`          | Fact      | Quarterly P25/P50/P75 cumulative watch hours across AIE exercise videos; basis for the decay projection model                                                      |
+| `fct_blog_performance`         | Fact      | GA4 page-view sessions per post per day by source/medium (forward-looking from March 2026 export start)                                                            |
+| `fct_content_calendar`         | Fact      | Cross-platform publish events unified across YouTube, WordPress, and Spotify                                                                                       |
+| `fct_pda_conversion`           | Fact      | Submission-to-purchase conversion with 24-hour clustering of repeat submissions; `conversion_type` distinguishes immediate, delayed, superseded, and non-converter |
+| `fct_pda_takers`               | Fact      | One row per JotForm submission; carries dominant/auxiliary functions, MiC type names, temperament, conversion window, and test/repeat taker flags                  |
+| `fct_revenue`                  | Fact      | Unified revenue across Stripe (with WooCommerce product join), PayPal WooCommerce orders, and YouTube AdSense                                                      |
+| `fct_youtube_calendar`         | Fact      | Daily video metrics joined to `dim_videos` for content type and category filtering                                                                                 |
+| `fct_youtube_channel_daily`    | Fact      | Channel-level daily metrics: views, watch hours, net subscribers, revenue                                                                                          |
+| `fct_youtube_daily_wh_by_type` | Fact      | Monthly watch hours aggregated by `content_type` (exercise vs other); used for cumulative trend charts                                                             |
+| `fct_youtube_performance`      | Fact      | Per-video quarterly watch hours using `DATE_ADD` quarter bucketing; `is_complete_quarter` flag for decay analysis                                                  |
+| `fct_youtube_video_daily`      | Fact      | Per-video daily metrics joined to `dim_videos` for content type and category                                                                                       |
+
 
 ---
 
@@ -132,7 +138,9 @@ Anyone reproducing this project would need to supply their own API credentials a
 
 ## Related Work
 
-**[Content Strategy Through Data: A Make it Conscious YouTube Analysis](https://medium.com/@maxchegwyn/content-strategy-through-data-a-make-it-conscious-youtube-analysis-aea066faaf9d)** — a standalone analytical project built on this platform's data, covering category performance, empirically derived decay modelling (0.879 quarterly late-stage decay rate, n=254 videos), per-video lifetime watch-hour projection, and channel-level forecasting.
+**Model lineage: [https://maxchegwyn.github.io/mic-analytics-platform](https://maxchegwyn.github.io/mic-analytics-platform)**
+
+**[Content Strategy Through Data: A Make it Conscious YouTube Analysis](https://medium.com/@maxchegwyn/content-strategy-through-data-a-make-it-conscious-youtube-analysis-aea066faaf9d)** — analytical project covering category performance, empirically derived decay modelling (0.879 quarterly late-stage decay rate, n=254 videos), per-video lifetime watch-hour projection, and channel-level forecasting.
 
 ---
 
