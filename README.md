@@ -14,10 +14,10 @@ Sources          Ingestion         Warehouse         Transform         BI
 YouTube    ──►                                                         Power BI
 Mailchimp  ──►   dlt (Python)  ──► BigQuery      ──► dbt Core     ──► (4 tabs)
 Stripe     ──►   pipelines         raw layer         12 staging
-WooCommerce──►   (GitHub                             15 mart           Tableau
-JotForm    ──►   Actions)          make-it-          models            (YouTube
-WordPress  ──►                     conscious                           lifecycle
-Spotify    ──►                     project                             charts)
+WooCommerce──►   (GitHub                             15 mart
+JotForm    ──►   Actions)          make-it-          models
+WordPress  ──►                     conscious
+Spotify    ──►                     project
 GA4        ──►
 ```
 
@@ -49,17 +49,20 @@ mic-analytics-platform/
 │   ├── jotform.py
 │   ├── wordpress.py
 │   └── spotify.py
+├── scripts/
+│   └── generate_synthetic_data.py
 ├── transform/                 # dbt Core project
 │   ├── models/
-│   │   ├── staging/           # 12 models — one per source, cleaning only
+│   │   ├── staging/           # 12 models — one per source table, cleaning only
 │   │   └── marts/             # 15 models — cross-source joins, business logic
-│   ├── dbt_project.yml
-│   └── profiles.yml           # not committed — local only
+│   └── dbt_project.yml
 ├── .github/
 │   └── workflows/
 │       └── daily_ingestion.yml
+├── .env.example
 ├── .gitattributes
 ├── .gitignore
+├── requirements.txt
 └── README.md
 ```
 
@@ -79,22 +82,22 @@ mic-analytics-platform/
 
 ## dbt Models
 
-**Staging (12 models)** — one model per source. Cleaning and standardisation only: column renames, type casts, simple filters, deduplication where required. No business logic at this layer.
+**Staging (12 models)** — cleaning and standardisation only: column renames, type casts, simple filters, deduplication where required. No business logic at this layer.
 
 | Model | Source | Key transforms |
 |---|---|---|
-| `stg_jotform` | `raw_jotform.submissions_*` | UNION of standard + manual opt submissions |
-| `stg_mailchimp_campaigns` | `raw_mailchimp.campaigns` | `status = 'sent'` filter |
-| `stg_mailchimp_email_activity` | `raw_mailchimp.email_activity` | Parent/child join on `_dlt_parent_id` |
+| `stg_jotform` | `raw_jotform.submissions_*` | UNION ALL of standard and manual opt submissions; clarity scores extracted via `REGEXP_EXTRACT` |
+| `stg_mailchimp_campaigns` | `raw_mailchimp.campaigns` | `status = 'sent'` filter; open/click rates from `__v_double` columns |
+| `stg_mailchimp_email_activity` | `raw_mailchimp.email_activity` | Child table left joined to parent on `_dlt_parent_id` |
 | `stg_mailchimp_members` | `raw_mailchimp.members` | QUALIFY dedup on email (latest `last_changed`) |
-| `stg_spotify_episodes` | `raw_spotify.*` | Episode metadata for both podcasts |
-| `stg_stripe_charges` | `raw_stripe.charges` | `amount / 100.0`; `paid = true AND refunded = false` |
-| `stg_video_metadata` | `raw_youtube.raw_video_metadata` | `publish_date` cast to DATE |
-| `stg_video_playlists` | `raw_youtube.raw_video_playlists` | Filtered to 14 exercise playlists |
-| `stg_woocommerce_orders` | `raw_woocommerce.orders` | Line item unnest via `_dlt_parent_id`; total cast to FLOAT64 |
-| `stg_wordpress_posts` | `raw_wordpress.posts` | `status = 'publish'` filter |
-| `stg_youtube` | `raw_youtube.raw_video_daily_metrics` | `estimated_minutes_watched / 60` → `watch_hours` |
-| `stg_youtube_channel` | `raw_youtube.raw_channel_daily_metrics` | Channel-level daily aggregates |
+| `stg_spotify_episodes` | `raw_spotify.episodes_*` | UNION ALL of both podcast episode tables; `duration_ms / 60000` to minutes |
+| `stg_stripe_charges` | `raw_stripe.charges` | `amount / 100.0`; `paid = true AND refunded = false` filter |
+| `stg_video_metadata` | `raw_youtube.raw_video_metadata` | `publish_date` cast to DATE; QUALIFY dedup on `video_id` |
+| `stg_video_playlists` | `raw_youtube.raw_video_playlists` | Column rename only |
+| `stg_woocommerce_orders` | `raw_woocommerce.orders` + `orders__line_items` | Line item unnest via `_dlt_parent_id`; `total` cast to FLOAT64; `completed` and `processing` statuses only |
+| `stg_wordpress_posts` | `raw_wordpress.posts` | `status = 'publish'` filter; `title__rendered` renamed |
+| `stg_youtube` | `raw_youtube.raw_video_daily_metrics` | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `video_id, date` |
+| `stg_youtube_channel` | `raw_youtube.raw_channel_daily_metrics` | `estimated_minutes_watched / 60` to `watch_hours`; QUALIFY dedup on `date` |
 
 **Marts (15 models)** — cross-source joins and business logic. Materialised as tables in `dbt_prod`.
 
@@ -120,7 +123,7 @@ mic-analytics-platform/
 
 ## Synthetic Data Note
 
-This repository uses real architectural patterns and transformation logic from a live production system. Source data (YouTube metrics, subscriber records, transaction history) is not committed to the repository. The `yt_timeseries_v3` CSV used in the YouTube capstone analysis contains real aggregate metrics but no personally identifiable information.
+This repository contains real architectural patterns and transformation logic from a live production system. Source data (YouTube metrics, subscriber records, transaction history) is not committed to the repository.
 
 Anyone reproducing this project would need to supply their own API credentials and source data.
 
@@ -128,7 +131,7 @@ Anyone reproducing this project would need to supply their own API credentials a
 
 ## Related Work
 
-**YouTube Content Strategy Capstone** — a standalone analytical project built on this platform's data, covering category performance, empirically derived decay modelling (0.879 quarterly late-stage decay rate, n=254 videos), per-video lifetime watch-hour projection, and channel-level forecasting. Published at [makeitconscious.com](https://makeitconscious.com) and Medium.
+**[Content Strategy Through Data: A Make it Conscious YouTube Analysis](https://medium.com/@maxchegwyn/content-strategy-through-data-a-make-it-conscious-youtube-analysis-aea066faaf9d)** — a standalone analytical project built on this platform's data, covering category performance, empirically derived decay modelling (0.879 quarterly late-stage decay rate, n=254 videos), per-video lifetime watch-hour projection, and channel-level forecasting.
 
 ---
 
@@ -149,4 +152,4 @@ dbt run --select model_name+
 dbt docs generate && dbt docs serve
 ```
 
-A `profiles.yml` pointing to `dbt_dev` (development dataset) is required locally. It is not committed to the repository.
+A `profiles.yml` pointing to `dbt_dev` (development dataset) is required locally. dbt looks for this at `~/.dbt/profiles.yml` by default — it is not committed to the repository.
