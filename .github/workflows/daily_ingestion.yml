@@ -4,9 +4,20 @@ on:
   schedule:
     - cron: '0 4 * * *'
   workflow_dispatch:
+    inputs:
+      youtube_backfill_start:
+        description: "Backfill YouTube per-video metrics from this date (YYYY-MM-DD); blank for a normal run"
+        required: false
+        default: ""
+      commit_freshness:
+        description: "Commit docs/data-freshness.md now (otherwise only on the 1st of the month)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
-  contents: read
+  contents: write
+  actions: write
   id-token: write
 
 jobs:
@@ -97,18 +108,21 @@ jobs:
           echo "SYNTHETIC_SCALE_FACTOR=$SYNTHETIC_SCALE_FACTOR" >> $GITHUB_ENV
 
       - name: Run YouTube ingestion
+        id: youtube
         continue-on-error: true
         env:
           TOKEN_FILE: /tmp/mic_token.json
           BQ_PROJECT: make-it-conscious
           BQ_DATASET: raw_youtube
           OAUTH_CLIENT_FILE: /tmp/dummy
+          YOUTUBE_BACKFILL_START: ${{ github.event.inputs.youtube_backfill_start }}
         run: |
           touch /tmp/dummy
           gcloud secrets versions access latest --secret=YOUTUBE_TOKEN > /tmp/mic_token.json
           python ingestion/youtube.py
 
       - name: Run Mailchimp ingestion
+        id: mailchimp
         continue-on-error: true
         env:
           MAILCHIMP_API_KEY: ${{ env.MAILCHIMP_API_KEY }}
@@ -116,12 +130,14 @@ jobs:
         run: python ingestion/mailchimp.py
 
       - name: Run Stripe ingestion
+        id: stripe
         continue-on-error: true
         env:
           STRIPE_API_KEY: ${{ env.STRIPE_API_KEY }}
         run: python ingestion/stripe_ingestion.py
 
       - name: Run WooCommerce ingestion
+        id: woocommerce
         continue-on-error: true
         env:
           WOOCOMMERCE_URL: ${{ env.WOOCOMMERCE_URL }}
@@ -130,6 +146,7 @@ jobs:
         run: python ingestion/woocommerce.py
 
       - name: Run JotForm ingestion
+        id: jotform
         continue-on-error: true
         env:
           JOTFORM_API_KEY: ${{ env.JOTFORM_API_KEY }}
@@ -138,10 +155,12 @@ jobs:
         run: python ingestion/jotform.py
 
       - name: Run WordPress ingestion
+        id: wordpress
         continue-on-error: true
         run: python ingestion/wordpress.py
 
       - name: Run Spotify ingestion
+        id: spotify
         continue-on-error: true
         env:
           SPOTIFY_CLIENT_ID: ${{ env.SPOTIFY_CLIENT_ID }}
@@ -154,6 +173,8 @@ jobs:
         run: pip install dbt-bigquery
 
       - name: Run dbt transformations
+        id: dbt
+        continue-on-error: true
         run: |
           mkdir -p /tmp/dbt_profiles
           cat > /tmp/dbt_profiles/profiles.yml << 'EOF'
@@ -172,7 +193,57 @@ jobs:
           DBT_PROFILES_DIR=/tmp/dbt_profiles dbt run --project-dir transform
 
       - name: Generate synthetic dataset
+        id: synthetic
         continue-on-error: true
         env:
           SYNTHETIC_SCALE_FACTOR: ${{ env.SYNTHETIC_SCALE_FACTOR }}
         run: python scripts/generate_synthetic_data.py
+
+      # Keep-alive: GitHub disables scheduled workflows in a public repo after
+      # 60 days without repository activity. Once a month, commit the data
+      # freshness page and re-enable this workflow through the API.
+      - name: Monthly data freshness commit (keep-alive)
+        if: always()
+        continue-on-error: true
+        env:
+          BQ_PROJECT: make-it-conscious
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ github.event.inputs.commit_freshness }}
+        run: |
+          if [ "$(date -u +%d)" != "01" ] && [ "$FORCE" != "true" ]; then
+            echo "Not the 1st of the month; skipping."
+            exit 0
+          fi
+          python scripts/data_freshness.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data-freshness.md
+          git commit -m "chore: monthly data freshness update" || echo "No change to commit"
+          git push
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/daily_ingestion.yml/enable"
+
+      # Each source carries on after an error so one failure doesn't block the
+      # rest; this step then fails the run so GitHub sends a failure email.
+      - name: Fail the run if any source failed
+        if: always()
+        env:
+          OUTCOMES: >-
+            YouTube=${{ steps.youtube.outcome }}
+            Mailchimp=${{ steps.mailchimp.outcome }}
+            Stripe=${{ steps.stripe.outcome }}
+            WooCommerce=${{ steps.woocommerce.outcome }}
+            JotForm=${{ steps.jotform.outcome }}
+            WordPress=${{ steps.wordpress.outcome }}
+            Spotify=${{ steps.spotify.outcome }}
+            dbt=${{ steps.dbt.outcome }}
+            Synthetic=${{ steps.synthetic.outcome }}
+        run: |
+          failed=""
+          for pair in $OUTCOMES; do
+            [ "${pair#*=}" = "success" ] || failed="$failed ${pair%%=*}(${pair#*=})"
+          done
+          if [ -n "$failed" ]; then
+            echo "::error::Failed or skipped:$failed"
+            exit 1
+          fi
+          echo "All sources loaded."

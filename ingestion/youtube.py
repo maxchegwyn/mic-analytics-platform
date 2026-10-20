@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 import dlt
@@ -17,6 +18,15 @@ BQ_PROJECT = os.environ.get("BQ_PROJECT")
 BQ_DATASET = os.environ.get("BQ_DATASET")
 YOUTUBE_START_DATE = os.environ.get("YOUTUBE_START_DATE", "2013-01-01")
 YOUTUBE_MODE = os.environ.get("YOUTUBE_MODE", "incremental")
+
+# One-off backfill of per-video daily metrics after a gap (YYYY-MM-DD).
+# Only moves the start of the per-video pull; the channel table is still
+# rebuilt from YOUTUBE_START_DATE, so its history is not truncated.
+YOUTUBE_BACKFILL_START = os.environ.get("YOUTUBE_BACKFILL_START", "").strip()
+
+# Rows yielded per resource in this run, checked after the load so an
+# empty pull fails the step instead of passing silently.
+ROW_COUNTS = {"video_daily": 0, "channel_daily": 0}
 
 # When true, supplement the uploads playlist with search.list to catch
 # unlisted videos and playlist-orphaned content. Costs ~800 extra quota
@@ -296,6 +306,7 @@ def youtube_daily_metrics(start_date: str, end_date: str):
                 chunk_start.strftime("%Y-%m-%d"),
                 chunk_end.strftime("%Y-%m-%d")
             )
+            ROW_COUNTS["video_daily"] += len(rows)
             yield from rows
             chunk_start = chunk_end + timedelta(days=1)
 
@@ -309,6 +320,7 @@ def youtube_channel_daily_metrics(start_date: str, end_date: str):
     service = get_authenticated_service()
     print("Fetching channel-level daily metrics")
     rows = fetch_channel_daily_metrics(service, start_date, end_date)
+    ROW_COUNTS["channel_daily"] += len(rows)
     yield from rows
 
 
@@ -337,9 +349,12 @@ def main():
     required = [CLIENT_SECRETS_FILE, TOKEN_FILE, BQ_PROJECT, BQ_DATASET]
     if not all(required):
         print("Error: missing required environment variables. Check your .env file.")
-        return
+        sys.exit(1)
 
-    if YOUTUBE_MODE == "incremental":
+    if YOUTUBE_BACKFILL_START:
+        start_date = YOUTUBE_BACKFILL_START
+        print(f"Backfill — pulling per-video metrics from {start_date}")
+    elif YOUTUBE_MODE == "incremental":
         start_date = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%d")
         print(f"Incremental mode — pulling from {start_date}")
     else:
@@ -368,6 +383,11 @@ def main():
         ]
     )
     print(load_info)
+    print(f"Rows: {ROW_COUNTS}")
+
+    if ROW_COUNTS["video_daily"] == 0 or ROW_COUNTS["channel_daily"] == 0:
+        print("Error: YouTube returned no daily rows; failing so the run is flagged.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
