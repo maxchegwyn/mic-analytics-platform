@@ -46,9 +46,11 @@ def main():
     items = youtube.channels().list(part="snippet", mine=True).execute().get("items", [])
     if not items:
         sys.exit("This account has no YouTube channel; nothing stored.")
-    print(f"Signed in as channel: {items[0]['snippet']['title']}")
-    if input("Store this sign-in for the daily job? [y/N] ").strip().lower() != "y":
-        sys.exit("Not stored.")
+    title = items[0]["snippet"]["title"]
+    print(f"Signed in as channel: {title}")
+    expected = os.environ.get("EXPECTED_CHANNEL", "Make it Conscious")
+    if title.strip().lower() != expected.strip().lower():
+        sys.exit(f"Not the {expected!r} channel; nothing stored. Run again and pick that channel.")
 
     result = subprocess.run(
         ["gcloud", "secrets", "versions", "add", SECRET_NAME,
